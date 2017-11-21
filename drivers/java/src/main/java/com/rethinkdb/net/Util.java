@@ -12,6 +12,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class Util {
 
@@ -45,9 +46,14 @@ public class Util {
     }
 
     public static <T, P> T convertToPojo(Object value, Optional<Class<P>> pojoClass) {
-        return !pojoClass.isPresent() || !(value instanceof Map)
-                ? (T) value
-                : (T) toPojo(pojoClass.get(), (Map<String, Object>) value);
+        if (!pojoClass.isPresent()) return (T) value;
+
+        if (value instanceof Map) return (T) toPojo(pojoClass.get(), (Map) value);
+
+        if (value instanceof List) return (T) ((List<Object>) value).stream()
+            .map(o -> convertToPojo(o, pojoClass)).collect(Collectors.toList());
+
+        return (T) value;
     }
 
     public static byte[] toUTF8(String s) {

@@ -8,18 +8,14 @@ import com.rethinkdb.model.Arguments;
 import com.rethinkdb.model.MapObject;
 import com.rethinkdb.model.ReqlLambda;
 
-import java.beans.BeanInfo;
-import java.beans.IntrospectionException;
-import java.beans.Introspector;
-import java.beans.PropertyDescriptor;
-import java.lang.reflect.*;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Set;
 
 
 public class Util {
@@ -59,9 +55,10 @@ public class Util {
             return new MakeArray(innerValues, null);
         }
 
-        if (val instanceof List) {
+        if (val instanceof Iterable) {
             Arguments innerValues = new Arguments();
-            for (java.lang.Object innerValue : (List) val) {
+
+            for (Object innerValue : (Iterable) val) {
                 innerValues.add(toReqlAst(innerValue, remainingDepth - 1));
             }
             return new MakeArray(innerValues, null);
@@ -86,13 +83,13 @@ public class Util {
         final DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSX");
 
         if (val instanceof LocalDateTime) {
-            ZoneId zid = ZoneId.systemDefault();
-            DateTimeFormatter fmt2 = fmt.withZone(zid);
-            return Iso8601.fromString(((LocalDateTime) val).format(fmt2));
+            return Iso8601.fromString(((LocalDateTime) val).format(fmt.withZone(ZoneId.systemDefault())));
         }
+
         if (val instanceof ZonedDateTime) {
             return Iso8601.fromString(((ZonedDateTime) val).format(fmt));
         }
+
         if (val instanceof OffsetDateTime) {
             return Iso8601.fromString(((OffsetDateTime) val).format(fmt));
         }
@@ -132,7 +129,6 @@ public class Util {
      * @return Map of POJO's public properties
      */
     private static Map<String, Object> toMap(Object pojo) {
-        Map<String, Object> map = RethinkDB.getObjectMapper().convertValue(pojo, Map.class);
-        return map;
+        return RethinkDB.getObjectMapper().convertValue(pojo, Map.class);
     }
 }
