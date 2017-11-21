@@ -8,8 +8,8 @@ import com.rethinkdb.gen.proto.ResponseNote;
 import com.rethinkdb.gen.proto.ResponseType;
 import com.rethinkdb.model.Backtrace;
 import com.rethinkdb.model.Profile;
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,6 +1,6 @@
 package com.rethinkdb.model;
 
-import org.json.simple.JSONArray;
+import org.json.JSONArray;
 
 import java.util.Optional;
 

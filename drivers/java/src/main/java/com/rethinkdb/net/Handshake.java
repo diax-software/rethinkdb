@@ -4,7 +4,7 @@ import com.rethinkdb.gen.exc.ReqlAuthError;
 import com.rethinkdb.gen.exc.ReqlDriverError;
 import com.rethinkdb.gen.proto.Protocol;
 import com.rethinkdb.gen.proto.Version;
-import org.json.simple.JSONObject;
+import org.json.JSONObject;
 
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;

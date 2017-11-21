@@ -1,8 +1,8 @@
 package com.rethinkdb.net;
 
 import com.rethinkdb.RethinkDB;
-import org.json.simple.JSONObject;
-import org.json.simple.JSONValue;
+import org.json.JSONObject;
+import org.json.JSONValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,7 +11,10 @@ import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class Util {
@@ -24,13 +27,12 @@ public class Util {
         return new String(buf.array(), StandardCharsets.UTF_8);
     }
 
-    public static <T, P> T convertToPojo(Object value, Optional<Class<P>> pojoClass) {
-        if (!pojoClass.isPresent()) return (T) value;
+    public static <T> T convertToPojo(Object value, Class<?> pojoClass) {
+        if (pojoClass == null) return (T) value;
 
-        if (value instanceof Map) return (T) toPojo(pojoClass.get(), (Map) value);
+        if (value instanceof Map) return (T) toPojo(pojoClass, (Map) value);
 
-        if (value instanceof List) return (T) ((List<Object>) value).stream()
-            .map(o -> convertToPojo(o, pojoClass)).collect(Collectors.toList());
+        if (value instanceof List) return (T) ((List<Object>) value).stream().map(o -> convertToPojo(o, pojoClass)).collect(Collectors.toList());
 
         return (T) value;
     }
@@ -81,7 +83,7 @@ public class Util {
      * @return Instantiated POJO
      */
     @SuppressWarnings("unchecked")
-    private static <T> T toPojo(Class<T> pojoClass, Map<String, Object> map) {
+    private static Object toPojo(Class<?> pojoClass, Map<String, Object> map) {
         // Jackson will throw an error if the POJO is not annotated with an ignore
         // annotation and the server gives a value that is not a field within the POJO To
         // prevent this, we get a list of all the field names from the class, and iterate

@@ -10,9 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLContext;
-import java.io.Closeable;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.SocketAddress;
 import java.util.List;
 import java.util.Map;
@@ -21,88 +19,13 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class Connection implements Closeable {
-    /**
-     * Connection.Builder should be used to build a Connection instance.
-     */
-    public static class Builder implements Cloneable {
-        private Optional<String> authKey = Optional.empty();
-        private Optional<InputStream> certFile = Optional.empty();
-        private Optional<String> dbname = Optional.empty();
-        private Optional<String> hostname = Optional.empty();
-        private Optional<String> password = Optional.empty();
-        private Optional<Integer> port = Optional.empty();
-        private Optional<SSLContext> sslContext = Optional.empty();
-        private Optional<Long> timeout = Optional.empty();
-        private Optional<String> user = Optional.empty();
-
-        public Builder clone() throws CloneNotSupportedException {
-            Builder c = (Builder) super.clone();
-            c.hostname = hostname;
-            c.port = port;
-            c.dbname = dbname;
-            c.certFile = certFile;
-            c.sslContext = sslContext;
-            c.timeout = timeout;
-            c.authKey = authKey;
-            c.user = user;
-            c.password = password;
-            return c;
-        }
-
-        public Builder authKey(String key) {
-            authKey = Optional.of(key);
-            return this;
-        }
-
-        public Builder certFile(InputStream val) {
-            certFile = Optional.of(val);
-            return this;
-        }
-
-        public Connection connect() {
-            final Connection conn = new Connection(this);
-            conn.reconnect();
-            return conn;
-        }
-
-        public Builder db(String val) {
-            dbname = Optional.of(val);
-            return this;
-        }
-
-        public Builder hostname(String val) {
-            hostname = Optional.of(val);
-            return this;
-        }
-
-        public Builder port(int val) {
-            port = Optional.of(val);
-            return this;
-        }
-
-        public Builder sslContext(SSLContext val) {
-            sslContext = Optional.of(val);
-            return this;
-        }
-
-        public Builder timeout(long val) {
-            timeout = Optional.of(val);
-            return this;
-        }
-
-        public Builder user(String user, String password) {
-            this.user = Optional.of(user);
-            this.password = Optional.of(password);
-            return this;
-        }
-    }
+public class Connection implements IConnection {
 
     // logger
     private static final Logger log = LoggerFactory.getLogger(Connection.class);
 
-    public static Builder build() {
-        return new Builder();
+    public static ConnectionBuilder build() {
+        return new ConnectionBuilder();
     }
 
     // public immutable
@@ -123,7 +46,7 @@ public class Connection implements Closeable {
     private ExecutorService exec;
     private Optional<SSLContext> sslContext;
 
-    public Connection(Builder builder) {
+    public Connection(ConnectionBuilder builder) {
         dbname = builder.dbname;
         if (builder.authKey.isPresent() && builder.user.isPresent()) {
             throw new ReqlDriverError("Either `authKey` or `user` can be used, but not both.");
@@ -230,8 +153,16 @@ public class Connection implements Closeable {
         });
     }
 
-    Future<Response> continue_(Cursor cursor) {
-        return sendQuery(Query.continue_(cursor.token), Optional.empty());
+    @Override
+    public <T> T run(ReqlAst term, OptArgs globalOpts, Class<?> pojoClass, Long timeout) {
+        setDefaultDB(globalOpts);
+        Query q = Query.start(newToken(), term, globalOpts);
+        if (globalOpts.containsKey("noreply")) {
+            throw new ReqlDriverError(
+                "Don't provide the noreply option as an optarg. " +
+                    "Use `.runNoReply` instead of `.run`");
+        }
+        return runQuery(q, pojoClass);
     }
 
     public Optional<String> db() {
@@ -246,8 +177,11 @@ public class Connection implements Closeable {
         return nextToken.incrementAndGet();
     }
 
-    public void noreplyWait() {
-        runQuery(Query.noreplyWait(newToken()));
+    @Override
+    public void runNoReply(ReqlAst term, OptArgs globalOpts) {
+        setDefaultDB(globalOpts);
+        globalOpts.with("noreply", true);
+        runQueryNoreply(Query.start(newToken(), term, globalOpts));
     }
 
     public Connection reconnect() {
@@ -271,33 +205,12 @@ public class Connection implements Closeable {
         cursorCache.remove(token);
     }
 
-    public <T, P> T run(ReqlAst term, OptArgs globalOpts, Optional<Class<P>> pojoClass) {
-        return run(term, globalOpts, pojoClass, Optional.empty());
+    Future<Response> continue_(Cursor cursor) {
+        return sendQuery(Query.continue_(cursor.token));
     }
 
-    public <T, P> T run(ReqlAst term, OptArgs globalOpts, Optional<Class<P>> pojoClass, Optional<Long> timeout) {
-        setDefaultDB(globalOpts);
-        Query q = Query.start(newToken(), term, globalOpts);
-        if (globalOpts.containsKey("noreply")) {
-            throw new ReqlDriverError(
-                "Don't provide the noreply option as an optarg. " +
-                    "Use `.runNoReply` instead of `.run`");
-        }
-        return runQuery(q, pojoClass, timeout);
-    }
-
-    public void runNoReply(ReqlAst term, OptArgs globalOpts) {
-        setDefaultDB(globalOpts);
-        globalOpts.with("noreply", true);
-        runQueryNoreply(Query.start(newToken(), term, globalOpts));
-    }
-
-    <T> T runQuery(Query query) {
-        return runQuery(query, Optional.empty());
-    }
-
-    <T, P> T runQuery(Query query, Optional<Class<P>> pojoClass) {
-        return runQuery(query, pojoClass, Optional.empty());
+    public void noreplyWait() {
+        runQuery(Query.noreplyWait(newToken()), null);
     }
 
     /**
@@ -305,15 +218,13 @@ public class Connection implements Closeable {
      *
      * @param query
      * @param pojoClass
-     * @param timeout
      * @param <T>
-     * @param <P>
      * @return
      */
-    <T, P> T runQuery(Query query, Optional<Class<P>> pojoClass, Optional<Long> timeout) {
+    <T> T runQuery(Query query, Class<?> pojoClass) {
         Response res = null;
         try {
-            res = sendQuery(query, timeout).get();
+            res = sendQuery(query).get();
         } catch (InterruptedException | ExecutionException e) {
             throw new ReqlDriverError(e);
         }
@@ -345,10 +256,9 @@ public class Connection implements Closeable {
      * Said completable future value will eventually be set by the runnable response pump (see {@link #connect}).
      *
      * @param query    the query to execute.
-     * @param deadline the timeout.
      * @return a completable future.
      */
-    private Future<Response> sendQuery(Query query, Optional<Long> deadline) {
+    private Future<Response> sendQuery(Query query) {
         // check if response pump is running
         if (!exec.isShutdown() && !exec.isTerminated()) {
             final CompletableFuture<Response> awaiter = new CompletableFuture<>();

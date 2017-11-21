@@ -4,19 +4,17 @@ import com.rethinkdb.gen.exc.ReqlDriverError;
 import com.rethinkdb.gen.proto.TermType;
 import com.rethinkdb.model.Arguments;
 import com.rethinkdb.model.OptArgs;
-import com.rethinkdb.net.Connection;
-import org.json.simple.JSONArray;
+import com.rethinkdb.net.IConnection;
+import org.json.JSONArray;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
  * Base class for all reql queries.
  */
 public class ReqlAst {
-
     public static Map<String, Object> buildOptarg(OptArgs opts) {
         Map<String, Object> result = new HashMap<>(opts.size());
         opts.forEach((name, arg) -> result.put(name, arg.build()));
@@ -31,6 +29,7 @@ public class ReqlAst {
         if (termType == null) {
             throw new ReqlDriverError("termType can't be null!");
         }
+
         this.termType = termType;
         this.args = args != null ? args : new Arguments();
         this.optargs = optargs != null ? optargs : new OptArgs();
@@ -47,18 +46,17 @@ public class ReqlAst {
 
     protected Object build() {
         // Create a JSON object from the Ast
-        JSONArray list = new JSONArray();
-        list.add(termType.value);
-        if (args.size() > 0) {
-            list.add(args.stream()
-                .map(ReqlAst::build)
-                .collect(Collectors.toCollection(JSONArray::new)));
-        } else {
-            list.add(new JSONArray());
-        }
+        JSONArray list = new JSONArray()
+            .put(termType.value)
+            .put(args.isEmpty() ?
+                new JSONArray() :
+                new JSONArray(args.stream().map(ReqlAst::build).toArray())
+            );
+
         if (optargs.size() > 0) {
-            list.add(buildOptarg(optargs));
+            list.put(buildOptarg(optargs));
         }
+
         return list;
     }
 
@@ -72,7 +70,7 @@ public class ReqlAst {
      * @param <T>  The type of result
      * @return The result of this query
      */
-    public <T> T run(Connection conn) {
+    public <T> T run(IConnection conn) {
         return conn.run(this, new OptArgs(), Optional.empty());
     }
 
@@ -87,8 +85,8 @@ public class ReqlAst {
      * @param <T>     The type of result
      * @return The result of this query
      */
-    public <T> T run(Connection conn, OptArgs runOpts) {
-        return conn.run(this, runOpts, Optional.empty());
+    public <T> T run(IConnection conn, OptArgs runOpts) {
+        return conn.run(this, runOpts);
     }
 
     /**
@@ -104,8 +102,8 @@ public class ReqlAst {
      * @param <P>       The type of POJO to convert to
      * @return The result of this query (either a {@code P or a Cursor<P>}
      */
-    public <T, P> T run(Connection conn, Class<P> pojoClass) {
-        return conn.run(this, new OptArgs(), Optional.of(pojoClass));
+    public <T, P> T run(IConnection conn, Class<P> pojoClass) {
+        return conn.run(this, new OptArgs(), pojoClass);
     }
 
     /**
@@ -122,15 +120,15 @@ public class ReqlAst {
      * @param <P>       The type of POJO to convert to
      * @return The result of this query (either a {@code P or a Cursor<P>}
      */
-    public <T, P> T run(Connection conn, OptArgs runOpts, Class<P> pojoClass) {
-        return conn.run(this, runOpts, Optional.of(pojoClass));
+    public <T, P> T run(IConnection conn, OptArgs runOpts, Class<P> pojoClass) {
+        return conn.run(this, runOpts, pojoClass);
     }
 
-    public void runNoReply(Connection conn) {
+    public void runNoReply(IConnection conn) {
         conn.runNoReply(this, new OptArgs());
     }
 
-    public void runNoReply(Connection conn, OptArgs globalOpts) {
+    public void runNoReply(IConnection conn, OptArgs globalOpts) {
         conn.runNoReply(this, globalOpts);
     }
 }

@@ -1,8 +1,12 @@
 package com.rethinkdb;
 
 import com.rethinkdb.net.Connection;
+import com.rethinkdb.net.ConnectionBuilder;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Properties;
 
 /**
@@ -18,7 +22,22 @@ public class TestingFramework {
     private static final String PROP_PORT = "port";
     private static final String PROP_AUTHKEY = "authKey";
 
-    private static Connection.Builder defaultConnectionBuilder;
+    private static ConnectionBuilder defaultConnectionBuilder;
+
+    /**
+     * @return A new connection from a specific builder to be used in tests where a specific connection is needed,
+     * i.e. connection secured with SSL.
+     */
+    public static Connection createConnection(ConnectionBuilder builder) throws Exception {
+        return builder.connect();
+    }
+
+    /**
+     * @return A new connection from the configuration.
+     */
+    public static Connection createConnection() throws Exception {
+        return createConnection(defaultConnectionBuilder());
+    }
 
     /**
      * Provision a connection builder based on the test configuration.
@@ -35,7 +54,7 @@ public class TestingFramework {
      *
      * @return Default connection builder.
      */
-    public static Connection.Builder defaultConnectionBuilder() {
+    public static ConnectionBuilder defaultConnectionBuilder() {
         if (defaultConnectionBuilder == null) {
             Properties config = new Properties();
 
@@ -69,21 +88,6 @@ public class TestingFramework {
         }
 
         return defaultConnectionBuilder;
-    }
-
-    /**
-     * @return A new connection from the configuration.
-     */
-    public static Connection createConnection() throws Exception {
-        return createConnection(defaultConnectionBuilder());
-    }
-
-    /**
-     * @return A new connection from a specific builder to be used in tests where a specific connection is needed,
-     * i.e. connection secured with SSL.
-     */
-    public static Connection createConnection(Connection.Builder builder) throws Exception {
-        return builder.connect();
     }
 
 }

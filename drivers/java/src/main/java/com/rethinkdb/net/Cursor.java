@@ -15,9 +15,9 @@ public abstract class Cursor<T> implements Iterator<T>, Iterable<T>, Closeable {
 
     private static class DefaultCursor<T> extends Cursor<T> {
         public final Converter.FormatOptions fmt;
-        private final Optional<Class<T>> pojoClass;
+        private final Class<T> pojoClass;
 
-        public DefaultCursor(Connection connection, Query query, Response firstResponse, Optional<Class<T>> pojoClass) {
+        public DefaultCursor(Connection connection, Query query, Response firstResponse, Class<T> pojoClass) {
             super(connection, query, firstResponse);
 
             this.pojoClass = pojoClass;
@@ -68,7 +68,7 @@ public abstract class Cursor<T> implements Iterator<T>, Iterable<T>, Closeable {
         }
     }
 
-    public static <T> Cursor<T> create(Connection connection, Query query, Response firstResponse, Optional<Class<T>> pojoClass) {
+    public static <T> Cursor<T> create(Connection connection, Query query, Response firstResponse, Class<T> pojoClass) {
         return new DefaultCursor<T>(connection, query, firstResponse, pojoClass);
     }
 

@@ -3,22 +3,20 @@ package com.rethinkdb.ast;
 import com.rethinkdb.gen.proto.QueryType;
 import com.rethinkdb.model.OptArgs;
 import com.rethinkdb.net.Util;
-import org.json.simple.JSONArray;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import org.json.JSONArray;
 
+import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 /* An instance for a query that has been sent to the server. Keeps
  * track of its token, the args to .run() it was called with, and its
  * query type.
 */
 
+@Slf4j
 public class Query {
-    static final Logger logger = LoggerFactory.getLogger(Query.class);
-
     public static Query continue_(long token) {
         return new Query(QueryType.CONTINUE, token, null, new OptArgs());
     }
@@ -36,14 +34,15 @@ public class Query {
     }
 
     public final OptArgs globalOptions;
-    public final Optional<ReqlAst> term;
+    @Nullable
+    public final ReqlAst term;
     public final long token;
     public final QueryType type;
 
     public Query(QueryType type, long token, ReqlAst term, OptArgs globalOptions) {
         this.type = type;
         this.token = token;
-        this.term = Optional.ofNullable(term);
+        this.term = term;
         this.globalOptions = globalOptions;
     }
 
@@ -52,19 +51,27 @@ public class Query {
     }
 
     public ByteBuffer serialize() {
-        JSONArray queryArr = new JSONArray();
-        queryArr.add(type.value);
-        term.ifPresent(t -> queryArr.add(t.build()));
-        if (!globalOptions.isEmpty()) {
-            queryArr.add(ReqlAst.buildOptarg(globalOptions));
+        JSONArray array = new JSONArray().put(type.value);
+
+        if (term != null) {
+            array.put(term.build());
         }
-        String queryJson = queryArr.toJSONString();
-        byte[] queryBytes = queryJson.getBytes(StandardCharsets.UTF_8);
-        ByteBuffer bb = Util.leByteBuffer(Long.BYTES + Integer.BYTES + queryBytes.length)
+
+        if (!globalOptions.isEmpty()) {
+            array.put(ReqlAst.buildOptarg(globalOptions));
+        }
+
+        String query = array.toString();
+
+        byte[] output = query.getBytes(StandardCharsets.UTF_8);
+
+        ByteBuffer buffer = Util.leByteBuffer(Long.BYTES + Integer.BYTES + output.length)
             .putLong(token)
-            .putInt(queryBytes.length)
-            .put(queryBytes);
-        logger.debug("JSON Send: Token: {} {}", token, queryJson);
-        return bb;
+            .putInt(output.length)
+            .put(output);
+
+        log.debug("JSON Send: Token: {} {}", token, query);
+
+        return buffer;
     }
 }
