@@ -9,7 +9,6 @@ import org.json.JSONArray;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Base class for all reql queries.
@@ -71,7 +70,7 @@ public class ReqlAst {
      * @return The result of this query
      */
     public <T> T run(IConnection conn) {
-        return conn.run(this, new OptArgs(), Optional.empty());
+        return conn.run(this, new OptArgs());
     }
 
     /**

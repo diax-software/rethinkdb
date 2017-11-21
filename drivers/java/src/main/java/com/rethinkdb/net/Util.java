@@ -2,7 +2,7 @@ package com.rethinkdb.net;
 
 import com.rethinkdb.RethinkDB;
 import org.json.JSONObject;
-import org.json.JSONValue;
+import org.json.JSONTokener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,13 +54,13 @@ public class Util {
     }
 
     public static JSONObject toJSON(String str) {
-        return (JSONObject) JSONValue.parse(str);
+        return new JSONObject(str);
     }
 
     public static JSONObject toJSON(ByteBuffer buf) {
         InputStreamReader codepointReader =
             new InputStreamReader(new ByteArrayInputStream(buf.array()));
-        return (JSONObject) JSONValue.parse(codepointReader);
+        return new JSONObject(new JSONTokener(codepointReader));
     }
 
     public static byte[] toUTF8(String s) {
@@ -77,7 +77,6 @@ public class Util {
      * and only in case <code>javac</code> is run with <code>-parameters</code> argument.<br>
      * If the POJO's class doesn't satisfy the conditions, a ReqlDriverError is thrown.
      *
-     * @param <T>       POJO's type
      * @param pojoClass POJO's class to be instantiated
      * @param map       Map to be converted
      * @return Instantiated POJO
