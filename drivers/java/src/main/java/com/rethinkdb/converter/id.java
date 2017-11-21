@@ -15,6 +15,5 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @JacksonAnnotationsInside
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public @interface id
-{
+public @interface id {
 }

@@ -6,36 +6,85 @@ import com.rethinkdb.gen.exc.ReqlRuntimeError;
 import com.rethinkdb.gen.proto.ResponseType;
 
 import java.io.Closeable;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-
 public abstract class Cursor<T> implements Iterator<T>, Iterable<T>, Closeable {
+
+    private static class DefaultCursor<T> extends Cursor<T> {
+        public final Converter.FormatOptions fmt;
+        private final Optional<Class<T>> pojoClass;
+
+        public DefaultCursor(Connection connection, Query query, Response firstResponse, Optional<Class<T>> pojoClass) {
+            super(connection, query, firstResponse);
+
+            this.pojoClass = pojoClass;
+            fmt = new Converter.FormatOptions(query.globalOptions);
+        }
+
+        @SuppressWarnings("unchecked")
+        T getNext(Optional<Long> timeout) throws TimeoutException {
+
+            while (items.size() == 0) {
+                maybeSendContinue();
+                waitOnCursorItems(timeout);
+
+                if (items.size() != 0) {
+                    break;
+                }
+
+                error.ifPresent(exc -> {
+                    throw exc;
+                });
+            }
+
+            Object value = Converter.convertPseudotypes(items.pop(), fmt);
+            return Util.convertToPojo(value, pojoClass);
+        }
+
+        /* This isn't great, but the Java iterator protocol relies on hasNext,
+         so it must be implemented in a reasonable way */
+        public boolean hasNext() {
+            try {
+                if (items.size() > 0) {
+                    return true;
+                }
+                if (error.isPresent()) {
+                    return false;
+                }
+                if (_isFeed) {
+                    return true;
+                }
+
+                maybeSendContinue();
+                waitOnCursorItems(Optional.empty());
+
+                return items.size() > 0;
+            } catch (TimeoutException toe) {
+                throw new RuntimeException("Timeout can't happen here");
+            }
+        }
+    }
+
+    public static <T> Cursor<T> create(Connection connection, Query query, Response firstResponse, Optional<Class<T>> pojoClass) {
+        return new DefaultCursor<T>(connection, query, firstResponse, pojoClass);
+    }
 
     // public immutable members
     public final long token;
-
+    protected final boolean _isFeed;
     // immutable members
     protected final Connection connection;
     protected final Query query;
-    protected final boolean _isFeed;
-
+    protected boolean alreadyIterated = false;
+    protected Future<Response> awaitingContinue = null;
+    protected Optional<RuntimeException> error = Optional.empty();
     // mutable members
     protected Deque<T> items = new ArrayDeque<>();
     protected int outstandingRequests = 0;
     protected int threshold = 1;
-    protected Optional<RuntimeException> error = Optional.empty();
-    protected boolean alreadyIterated = false;
-
-    protected Future<Response> awaitingContinue = null;
 
     public Cursor(Connection connection, Query query, Response firstResponse) {
         this.connection = connection;
@@ -46,6 +95,9 @@ public abstract class Cursor<T> implements Iterator<T>, Iterable<T>, Closeable {
         maybeSendContinue();
         extendInternal(firstResponse);
     }
+
+    // Abstract methods
+    abstract T getNext(Optional<Long> timeout) throws TimeoutException;
 
     public void close() {
         connection.removeFromCache(this.token);
@@ -58,16 +110,20 @@ public abstract class Cursor<T> implements Iterator<T>, Iterable<T>, Closeable {
         }
     }
 
-    public int bufferedSize() {
-        return items.size();
+    public Iterator<T> iterator() {
+        if (!alreadyIterated) {
+            alreadyIterated = true;
+            return this;
+        }
+        throw new ReqlDriverError("The results of this query have already been consumed.");
     }
 
     public ArrayList<T> bufferedItems() {
         return new ArrayList<>(items);
     }
 
-    public boolean isFeed() {
-        return this._isFeed;
+    public int bufferedSize() {
+        return items.size();
     }
 
     void extend(Response response) {
@@ -78,66 +134,31 @@ public abstract class Cursor<T> implements Iterator<T>, Iterable<T>, Closeable {
 
     private void extendInternal(Response response) {
         threshold = response.data.size();
-        if(!error.isPresent()){
-            if(response.isPartial()){
+        if (!error.isPresent()) {
+            if (response.isPartial()) {
                 items.addAll(response.data);
-            } else if(response.isSequence()) {
+            } else if (response.isSequence()) {
                 items.addAll(response.data);
                 error = Optional.of(new NoSuchElementException());
             } else {
                 error = Optional.of(response.makeError(query));
             }
         }
-        if(outstandingRequests == 0 && error.isPresent()) {
+        if (outstandingRequests == 0 && error.isPresent()) {
             connection.removeFromCache(response.token);
         }
     }
 
+    public boolean isFeed() {
+        return this._isFeed;
+    }
+
     protected void maybeSendContinue() {
-        if(!error.isPresent()
-                && items.size() < threshold
-                && outstandingRequests == 0 ) {
+        if (!error.isPresent()
+            && items.size() < threshold
+            && outstandingRequests == 0) {
             outstandingRequests += 1;
             this.awaitingContinue = connection.continue_(this);
-        }
-    }
-
-    protected void waitOnCursorItems(Optional<Long> timeout) throws TimeoutException {
-        Response res = null;
-        try {
-            if(timeout.isPresent()){
-                res = this.awaitingContinue.get(timeout.get(), TimeUnit.MILLISECONDS);
-            } else {
-                res = this.awaitingContinue.get();
-            }
-        }catch(TimeoutException exc){
-            throw exc;
-        }catch(Exception e){
-            throw new ReqlDriverError(e);
-        }
-        this.extend(res);
-    }
-
-    void setError(String errMsg) {
-        if(!error.isPresent()){
-            error = Optional.of(new ReqlRuntimeError(errMsg));
-            Response dummyResponse = Response
-                    .make(query.token, ResponseType.SUCCESS_SEQUENCE)
-                    .build();
-            extendInternal(dummyResponse);
-        }
-    }
-
-    public static <T> Cursor<T> create(Connection connection, Query query, Response firstResponse, Optional<Class<T>> pojoClass) {
-        return new DefaultCursor<T>(connection, query, firstResponse, pojoClass);
-    }
-
-
-    public T next() {
-        try {
-            return getNext(Optional.empty());
-        }catch(TimeoutException toe) {
-            throw new RuntimeException("Timeout can't happen here");
         }
     }
 
@@ -145,16 +166,18 @@ public abstract class Cursor<T> implements Iterator<T>, Iterable<T>, Closeable {
         return getNext(Optional.of(timeout));
     }
 
-    public Iterator<T> iterator(){
-        if (!alreadyIterated) {
-            alreadyIterated = true;
-            return this;
+    void setError(String errMsg) {
+        if (!error.isPresent()) {
+            error = Optional.of(new ReqlRuntimeError(errMsg));
+            Response dummyResponse = Response
+                .make(query.token, ResponseType.SUCCESS_SEQUENCE)
+                .build();
+            extendInternal(dummyResponse);
         }
-        throw new ReqlDriverError("The results of this query have already been consumed.");
     }
-
     /**
      * Iterates over all elements of this cursor and returns them as a list
+     *
      * @return The list of this cursor's elements
      */
     public List<T> toList() {
@@ -163,61 +186,28 @@ public abstract class Cursor<T> implements Iterator<T>, Iterable<T>, Closeable {
         return list;
     }
 
-    // Abstract methods
-    abstract T getNext(Optional<Long> timeout) throws TimeoutException;
-
-    private static class DefaultCursor<T> extends Cursor<T> {
-        private final Optional<Class<T>> pojoClass;
-        public final Converter.FormatOptions fmt;
-
-        public DefaultCursor(Connection connection, Query query, Response firstResponse, Optional<Class<T>> pojoClass) {
-            super(connection, query, firstResponse);
-
-            this.pojoClass = pojoClass;
-            fmt = new Converter.FormatOptions(query.globalOptions);
-        }
-
-        /* This isn't great, but the Java iterator protocol relies on hasNext,
-         so it must be implemented in a reasonable way */
-        public boolean hasNext(){
-            try {
-                if(items.size() > 0){
-                    return true;
-                }
-                if(error.isPresent()){
-                    return false;
-                }
-                if(_isFeed){
-                    return true;
-                }
-
-                maybeSendContinue();
-                waitOnCursorItems(Optional.empty());
-
-                return items.size() > 0;
-            }catch(TimeoutException toe) {
-                throw new RuntimeException("Timeout can't happen here");
-            }
-        }
-
-        @SuppressWarnings("unchecked")
-        T getNext(Optional<Long> timeout) throws TimeoutException {
-
-            while( items.size() == 0){
-                maybeSendContinue();
-                waitOnCursorItems(timeout);
-
-                if( items.size() != 0){
-                    break;
-                }
-
-                error.ifPresent(exc -> {
-                    throw exc;
-                });
-            }
-
-            Object value = Converter.convertPseudotypes(items.pop(), fmt);
-            return Util.convertToPojo(value, pojoClass);
+    public T next() {
+        try {
+            return getNext(Optional.empty());
+        } catch (TimeoutException toe) {
+            throw new RuntimeException("Timeout can't happen here");
         }
     }
+
+    protected void waitOnCursorItems(Optional<Long> timeout) throws TimeoutException {
+        Response res = null;
+        try {
+            if (timeout.isPresent()) {
+                res = this.awaitingContinue.get(timeout.get(), TimeUnit.MILLISECONDS);
+            } else {
+                res = this.awaitingContinue.get();
+            }
+        } catch (TimeoutException exc) {
+            throw exc;
+        } catch (Exception e) {
+            throw new ReqlDriverError(e);
+        }
+        this.extend(res);
+    }
+
 }

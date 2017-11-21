@@ -17,9 +17,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 
-
 public class Util {
-    private Util(){}
     /**
      * Coerces objects from their native type to ReqlAst
      *
@@ -30,13 +28,25 @@ public class Util {
         return toReqlAst(val, 100);
     }
 
-    public static ReqlExpr toReqlExpr(Object val){
+    public static ReqlExpr toReqlExpr(Object val) {
         ReqlAst converted = toReqlAst(val);
-        if(converted instanceof ReqlExpr){
+        if (converted instanceof ReqlExpr) {
             return (ReqlExpr) converted;
-        }else{
+        } else {
             throw new ReqlDriverError("Cannot convert %s to ReqlExpr", val);
         }
+    }
+
+    /**
+     * Converts a POJO to a map of its public properties collected using bean introspection.<br>
+     * The POJO's class must be public, or a ReqlDriverError would be thrown.<br>
+     * Numeric properties should be Long instead of Integer
+     *
+     * @param pojo POJO to be introspected
+     * @return Map of POJO's public properties
+     */
+    private static Map<String, Object> toMap(Object pojo) {
+        return RethinkDB.getObjectMapper().convertValue(pojo, Map.class);
     }
 
     private static ReqlAst toReqlAst(Object val, int remainingDepth) {
@@ -47,9 +57,9 @@ public class Util {
             return (ReqlAst) val;
         }
 
-        if (val instanceof Object[]){
+        if (val instanceof Object[]) {
             Arguments innerValues = new Arguments();
-            for (Object innerValue : Arrays.asList((Object[])val)){
+            for (Object innerValue : Arrays.asList((Object[]) val)) {
                 innerValues.add(toReqlAst(innerValue, remainingDepth - 1));
             }
             return new MakeArray(innerValues, null);
@@ -114,21 +124,13 @@ public class Util {
             return new Datum(null);
         }
         if (val.getClass().isEnum()) {
-            return new Datum(((Enum)val).toString());
+            return new Datum(((Enum) val).toString());
         }
 
         // val is a non-null POJO, let's use jackson
         return toReqlAst(toMap(val));
     }
 
-    /**
-     * Converts a POJO to a map of its public properties collected using bean introspection.<br>
-     * The POJO's class must be public, or a ReqlDriverError would be thrown.<br>
-     * Numeric properties should be Long instead of Integer
-     * @param pojo POJO to be introspected
-     * @return Map of POJO's public properties
-     */
-    private static Map<String, Object> toMap(Object pojo) {
-        return RethinkDB.getObjectMapper().convertValue(pojo, Map.class);
+    private Util() {
     }
 }

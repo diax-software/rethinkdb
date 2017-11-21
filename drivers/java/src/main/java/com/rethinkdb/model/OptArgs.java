@@ -8,6 +8,18 @@ import java.util.List;
 import java.util.Map;
 
 public class OptArgs extends LinkedHashMap<String, ReqlAst> {
+    public static OptArgs fromMap(Map<String, ReqlAst> map) {
+        OptArgs oa = new OptArgs();
+        oa.putAll(map);
+        return oa;
+    }
+
+    public static OptArgs of(String key, Object val) {
+        OptArgs oa = new OptArgs();
+        oa.with(key, val);
+        return oa;
+    }
+
     public OptArgs with(String key, Object value) {
         if (key != null) {
             put(key, Util.toReqlAst(value));
@@ -20,18 +32,6 @@ public class OptArgs extends LinkedHashMap<String, ReqlAst> {
             put(key, Util.toReqlAst(value));
         }
         return this;
-    }
-
-    public static OptArgs fromMap(Map<String, ReqlAst> map) {
-        OptArgs oa = new OptArgs();
-        oa.putAll(map);
-        return oa;
-    }
-
-    public static OptArgs of(String key, Object val) {
-        OptArgs oa = new OptArgs();
-        oa.with(key, val);
-        return oa;
     }
 
 }

@@ -2,10 +2,10 @@ package com.rethinkdb;
 
 import com.rethinkdb.ast.Query;
 import com.rethinkdb.ast.ReqlAst;
+import com.rethinkdb.gen.exc.*;
 import com.rethinkdb.gen.proto.ErrorType;
 import com.rethinkdb.gen.proto.ResponseType;
 import com.rethinkdb.model.Backtrace;
-import com.rethinkdb.gen.exc.*;
 
 import java.util.Optional;
 import java.util.function.Function;
@@ -22,25 +22,10 @@ public class ErrorBuilder {
         this.responseType = responseType;
     }
 
-    public ErrorBuilder setBacktrace(Optional<Backtrace> backtrace) {
-        this.backtrace = backtrace;
-        return this;
-    }
-
-    public ErrorBuilder setErrorType(Optional<ErrorType> errorType) {
-        this.errorType = errorType;
-        return this;
-    }
-
-    public ErrorBuilder setTerm(Query query) {
-        this.term = query.term;
-        return this;
-    }
-
     public ReqlError build() {
         assert (msg != null);
         assert (responseType != null);
-        Function<String,ReqlError> con;
+        Function<String, ReqlError> con;
         switch (responseType) {
             case CLIENT_ERROR:
                 con = ReqlClientError::new;
@@ -49,7 +34,7 @@ public class ErrorBuilder {
                 con = ReqlServerCompileError::new;
                 break;
             case RUNTIME_ERROR: {
-                con = errorType.<Function<String,ReqlError>>map(et -> {
+                con = errorType.<Function<String, ReqlError>>map(et -> {
                     switch (et) {
                         case INTERNAL:
                             return ReqlInternalError::new;
@@ -80,5 +65,20 @@ public class ErrorBuilder {
         backtrace.ifPresent(res::setBacktrace);
         term.ifPresent(res::setTerm);
         return res;
+    }
+
+    public ErrorBuilder setBacktrace(Optional<Backtrace> backtrace) {
+        this.backtrace = backtrace;
+        return this;
+    }
+
+    public ErrorBuilder setErrorType(Optional<ErrorType> errorType) {
+        this.errorType = errorType;
+        return this;
+    }
+
+    public ErrorBuilder setTerm(Query query) {
+        this.term = query.term;
+        return this;
     }
 }

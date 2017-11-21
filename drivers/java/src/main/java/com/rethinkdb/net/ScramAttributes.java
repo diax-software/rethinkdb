@@ -5,18 +5,6 @@ import com.rethinkdb.gen.exc.ReqlAuthError;
 import java.util.Optional;
 
 public class ScramAttributes {
-    Optional<String> _authIdentity = Optional.empty(); // a
-    Optional<String> _username = Optional.empty();     // n
-    Optional<String> _nonce = Optional.empty();        // r
-    Optional<String> _headerAndChannelBinding = Optional.empty(); // c
-    Optional<byte[]> _salt = Optional.empty(); // s
-    Optional<Integer> _iterationCount = Optional.empty(); // i
-    Optional<String> _clientProof = Optional.empty(); // p
-    Optional<byte[]> _serverSignature = Optional.empty(); // v
-    Optional<String> _error = Optional.empty(); // e
-    Optional<String> _originalString = Optional.empty();
-
-
     public static ScramAttributes create() {
         return new ScramAttributes();
     }
@@ -44,6 +32,92 @@ public class ScramAttributes {
             sa.setAttribute(keyVal[0], keyVal[1]);
         }
         return sa;
+    }
+
+    Optional<String> _authIdentity = Optional.empty(); // a
+    Optional<String> _clientProof = Optional.empty(); // p
+    Optional<String> _error = Optional.empty(); // e
+    Optional<String> _headerAndChannelBinding = Optional.empty(); // c
+    Optional<Integer> _iterationCount = Optional.empty(); // i
+    Optional<String> _nonce = Optional.empty();        // r
+    Optional<String> _originalString = Optional.empty();
+    Optional<byte[]> _salt = Optional.empty(); // s
+    Optional<byte[]> _serverSignature = Optional.empty(); // v
+    Optional<String> _username = Optional.empty();     // n
+
+    public String toString() {
+        if (_originalString.isPresent()) {
+            return _originalString.get();
+        }
+        String output = "";
+        if (_username.isPresent()) {
+            output += ",n=" + _username.get();
+        }
+        if (_nonce.isPresent()) {
+            output += ",r=" + _nonce.get();
+        }
+        if (_headerAndChannelBinding.isPresent()) {
+            output += ",c=" + _headerAndChannelBinding.get();
+        }
+        if (_clientProof.isPresent()) {
+            output += ",p=" + _clientProof.get();
+        }
+        if (output.startsWith(",")) {
+            return output.substring(1);
+        } else {
+            return output;
+        }
+    }
+
+    // Getters
+    String authIdentity() {
+        return _authIdentity.get();
+    }
+
+    ScramAttributes clientProof(byte[] clientProof) {
+        ScramAttributes next = ScramAttributes.from(this);
+        next._clientProof = Optional.of(Crypto.toBase64(clientProof));
+        return next;
+    }
+
+    String clientProof() {
+        return _clientProof.get();
+    }
+
+    String error() {
+        return _error.get();
+    }
+
+    ScramAttributes headerAndChannelBinding(String hacb) {
+        ScramAttributes next = ScramAttributes.from(this);
+        next._headerAndChannelBinding = Optional.of(hacb);
+        return next;
+    }
+
+    String headerAndChannelBinding() {
+        return _headerAndChannelBinding.get();
+    }
+
+    Integer iterationCount() {
+        return _iterationCount.get();
+    }
+
+    ScramAttributes nonce(String nonce) {
+        ScramAttributes next = ScramAttributes.from(this);
+        next._nonce = Optional.of(nonce);
+        return next;
+    }
+
+    String nonce() {
+        return _nonce.get();
+    }
+
+    byte[] salt() {
+        return _salt.get();
+    }
+
+    byte[] serverSignature() {
+        return _serverSignature.get();
     }
 
     private void setAttribute(String key, String val) {
@@ -82,30 +156,6 @@ public class ScramAttributes {
         }
     }
 
-    public String toString() {
-        if (_originalString.isPresent()) {
-            return _originalString.get();
-        }
-        String output = "";
-        if (_username.isPresent()) {
-            output += ",n=" + _username.get();
-        }
-        if (_nonce.isPresent()) {
-            output += ",r=" + _nonce.get();
-        }
-        if (_headerAndChannelBinding.isPresent()) {
-            output += ",c=" + _headerAndChannelBinding.get();
-        }
-        if (_clientProof.isPresent()) {
-            output += ",p=" + _clientProof.get();
-        }
-        if (output.startsWith(",")) {
-            return output.substring(1);
-        } else {
-            return output;
-        }
-    }
-
     // Setters with coercion
     ScramAttributes username(String username) {
         ScramAttributes next = ScramAttributes.from(this);
@@ -113,32 +163,7 @@ public class ScramAttributes {
         return next;
     }
 
-    ScramAttributes nonce(String nonce) {
-        ScramAttributes next = ScramAttributes.from(this);
-        next._nonce = Optional.of(nonce);
-        return next;
+    String username() {
+        return _username.get();
     }
-
-    ScramAttributes headerAndChannelBinding(String hacb) {
-        ScramAttributes next = ScramAttributes.from(this);
-        next._headerAndChannelBinding = Optional.of(hacb);
-        return next;
-    }
-
-    ScramAttributes clientProof(byte[] clientProof) {
-        ScramAttributes next = ScramAttributes.from(this);
-        next._clientProof = Optional.of(Crypto.toBase64(clientProof));
-        return next;
-    }
-
-    // Getters
-    String authIdentity() { return _authIdentity.get(); }
-    String username() { return _username.get(); }
-    String nonce() { return _nonce.get(); }
-    String headerAndChannelBinding() { return _headerAndChannelBinding.get(); }
-    byte[] salt() { return _salt.get(); }
-    Integer iterationCount() { return _iterationCount.get(); }
-    String clientProof() { return _clientProof.get(); }
-    byte[] serverSignature() { return _serverSignature.get(); }
-    String error() { return _error.get(); }
 }

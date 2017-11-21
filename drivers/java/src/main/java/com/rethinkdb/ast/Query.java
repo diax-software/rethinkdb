@@ -3,16 +3,13 @@ package com.rethinkdb.ast;
 import com.rethinkdb.gen.proto.QueryType;
 import com.rethinkdb.model.OptArgs;
 import com.rethinkdb.net.Util;
-
-import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.util.*;
-
+import org.json.simple.JSONArray;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.json.simple.JSONArray;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 /* An instance for a query that has been sent to the server. Keeps
  * track of its token, the args to .run() it was called with, and its
@@ -20,12 +17,28 @@ import org.json.simple.JSONArray;
 */
 
 public class Query {
-    public final QueryType type;
-    public final long token;
-    public final Optional<ReqlAst> term;
-    public final OptArgs globalOptions;
-
     static final Logger logger = LoggerFactory.getLogger(Query.class);
+
+    public static Query continue_(long token) {
+        return new Query(QueryType.CONTINUE, token, null, new OptArgs());
+    }
+
+    public static Query noreplyWait(long token) {
+        return new Query(QueryType.NOREPLY_WAIT, token, null, new OptArgs());
+    }
+
+    public static Query start(long token, ReqlAst term, OptArgs globalOptions) {
+        return new Query(QueryType.START, token, term, globalOptions);
+    }
+
+    public static Query stop(long token) {
+        return new Query(QueryType.STOP, token, null, new OptArgs());
+    }
+
+    public final OptArgs globalOptions;
+    public final Optional<ReqlAst> term;
+    public final long token;
+    public final QueryType type;
 
     public Query(QueryType type, long token, ReqlAst term, OptArgs globalOptions) {
         this.type = type;
@@ -38,27 +51,11 @@ public class Query {
         this(type, token, null, new OptArgs());
     }
 
-    public static Query stop(long token) {
-        return new Query(QueryType.STOP, token, null, new OptArgs());
-    }
-
-    public static Query continue_(long token) {
-        return new Query(QueryType.CONTINUE, token, null, new OptArgs());
-    }
-
-    public static Query start(long token, ReqlAst term, OptArgs globalOptions) {
-        return new Query(QueryType.START, token, term, globalOptions);
-    }
-
-    public static Query noreplyWait(long token) {
-        return new Query(QueryType.NOREPLY_WAIT, token, null, new OptArgs());
-    }
-
     public ByteBuffer serialize() {
         JSONArray queryArr = new JSONArray();
         queryArr.add(type.value);
         term.ifPresent(t -> queryArr.add(t.build()));
-        if(!globalOptions.isEmpty()) {
+        if (!globalOptions.isEmpty()) {
             queryArr.add(ReqlAst.buildOptarg(globalOptions));
         }
         String queryJson = queryArr.toJSONString();

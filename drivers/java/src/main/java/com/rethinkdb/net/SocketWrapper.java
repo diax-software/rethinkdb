@@ -17,27 +17,53 @@ import java.nio.ByteOrder;
 import java.util.Optional;
 
 public class SocketWrapper {
+    private final String hostname;
+    private final int port;
+    private DataInputStream readStream = null;
     // networking stuff
     private Socket socket = null;
     private SocketFactory socketFactory = SocketFactory.getDefault();
-    private SSLSocket sslSocket = null;
-    private OutputStream writeStream = null;
-    private DataInputStream readStream = null;
-
     // options
     private Optional<SSLContext> sslContext = Optional.empty();
+    private SSLSocket sslSocket = null;
     private Optional<Long> timeout = Optional.empty();
-    private final String hostname;
-    private final int port;
+    private OutputStream writeStream = null;
 
     SocketWrapper(String hostname,
-                  int port,
-                  Optional<SSLContext> sslContext,
-                  Optional<Long> timeout) {
+        int port,
+        Optional<SSLContext> sslContext,
+        Optional<Long> timeout) {
         this.hostname = hostname;
         this.port = port;
         this.sslContext = sslContext;
         this.timeout = timeout;
+    }
+
+    public Optional<SocketAddress> clientAddress() {
+        return Optional.ofNullable(socket.getLocalSocketAddress());
+    }
+
+    public Optional<Integer> clientPort() {
+        Optional<Integer> ret;
+        if (socket != null) {
+            ret = Optional.ofNullable(socket.getLocalPort());
+        } else {
+            ret = Optional.empty();
+        }
+        return ret;
+    }
+
+    /**
+     * Close connection.
+     */
+    void close() {
+        // if needed, disconnect from server
+        if (socket != null && isOpen())
+            try {
+                socket.close();
+            } catch (IOException e) {
+                throw new ReqlDriverError(e);
+            }
     }
 
     /**
@@ -58,10 +84,12 @@ public class SocketWrapper {
             if (sslContext.isPresent()) {
                 socketFactory = sslContext.get().getSocketFactory();
                 SSLSocketFactory sslSf = (SSLSocketFactory) socketFactory;
-                sslSocket = (SSLSocket) sslSf.createSocket(socket,
-                        socket.getInetAddress().getHostAddress(),
-                        socket.getPort(),
-                        true);
+                sslSocket = (SSLSocket) sslSf.createSocket(
+                    socket,
+                    socket.getInetAddress().getHostAddress(),
+                    socket.getPort(),
+                    true
+                );
 
                 // replace input/output streams
                 readStream = new DataInputStream(sslSocket.getInputStream());
@@ -80,7 +108,7 @@ public class SocketWrapper {
             Optional<ByteBuffer> toWrite = handshake.nextMessage(null);
             // Sit in the handshake until it's completed. Exceptions will be thrown if
             // anything goes wrong.
-            while(!handshake.isFinished()) {
+            while (!handshake.isFinished()) {
                 if (toWrite.isPresent()) {
                     write(toWrite.get());
                 }
@@ -92,40 +120,13 @@ public class SocketWrapper {
         }
     }
 
-    void write(ByteBuffer buffer) {
-        try {
-            buffer.flip();
-            writeStream.write(buffer.array());
-        } catch (IOException e) {
-            throw new ReqlDriverError(e);
-        }
-    }
-
     /**
-     * Tries to read a null-terminated string from the socket. This operation may timeout if a timeout is specified.
+     * Tells whether we have a working connection or not.
      *
-     * @param deadline an optional timeout.
-     * @return a string.
-     * @throws IOException
+     * @return true if connection is connected and open, false otherwise.
      */
-    private String readNullTerminatedString(Optional<Long> deadline)
-            throws IOException {
-        final StringBuilder sb = new StringBuilder();
-        char c;
-        // set deadline instant
-        final Optional<Long> deadlineInstant = deadline.isPresent() ? Optional.of(System.currentTimeMillis() + deadline.get()) : Optional.empty();
-        while ((c = (char) this.readStream.readByte()) != '\0') {
-            // is there a deadline?
-            if (deadlineInstant.isPresent()) {
-                // have we timed-out?
-                if (deadlineInstant.get() < System.currentTimeMillis()) { // reached time-out
-                    throw new ReqlDriverError("Connection timed out.");
-                }
-            }
-            sb.append(c);
-        }
-
-        return sb.toString();
+    boolean isOpen() {
+        return socket == null ? false : socket.isConnected() && !socket.isClosed();
     }
 
     /**
@@ -155,38 +156,39 @@ public class SocketWrapper {
         return ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN);
     }
 
-    public Optional<Integer> clientPort() {
-        Optional<Integer> ret;
-        if (socket != null) {
-            ret = Optional.ofNullable(socket.getLocalPort());
-        } else {
-            ret = Optional.empty();
-        }
-        return ret;
-    }
-
-    public Optional<SocketAddress> clientAddress() {
-        return Optional.ofNullable(socket.getLocalSocketAddress());
-    }
     /**
-     * Tells whether we have a working connection or not.
+     * Tries to read a null-terminated string from the socket. This operation may timeout if a timeout is specified.
      *
-     * @return true if connection is connected and open, false otherwise.
+     * @param deadline an optional timeout.
+     * @return a string.
+     * @throws IOException
      */
-    boolean isOpen() {
-        return socket == null ? false : socket.isConnected() && !socket.isClosed();
+    private String readNullTerminatedString(Optional<Long> deadline)
+        throws IOException {
+        final StringBuilder sb = new StringBuilder();
+        char c;
+        // set deadline instant
+        final Optional<Long> deadlineInstant = deadline.isPresent() ? Optional.of(System.currentTimeMillis() + deadline.get()) : Optional.empty();
+        while ((c = (char) this.readStream.readByte()) != '\0') {
+            // is there a deadline?
+            if (deadlineInstant.isPresent()) {
+                // have we timed-out?
+                if (deadlineInstant.get() < System.currentTimeMillis()) { // reached time-out
+                    throw new ReqlDriverError("Connection timed out.");
+                }
+            }
+            sb.append(c);
+        }
+
+        return sb.toString();
     }
 
-    /**
-     * Close connection.
-     */
-    void close() {
-        // if needed, disconnect from server
-        if (socket != null && isOpen())
-            try {
-                socket.close();
-            } catch (IOException e) {
-                throw new ReqlDriverError(e);
-            }
+    void write(ByteBuffer buffer) {
+        try {
+            buffer.flip();
+            writeStream.write(buffer.array());
+        } catch (IOException e) {
+            throw new ReqlDriverError(e);
+        }
     }
 }

@@ -15,28 +15,37 @@ import static com.rethinkdb.net.Util.toJSON;
 import static com.rethinkdb.net.Util.toUTF8;
 
 public class Handshake {
-    static final Version VERSION = Version.V1_0;
-    static final Long SUB_PROTOCOL_VERSION = 0L;
-    static final Protocol PROTOCOL = Protocol.JSON;
-
-
-    private static final String CLIENT_KEY = "Client Key";
-    private static final String SERVER_KEY = "Server Key";
-
-    private final String username;
-    private final String password;
-    private ProtocolState state;
-
     private interface ProtocolState {
-        ProtocolState nextState(String response);
-        Optional<ByteBuffer> toSend();
         boolean isFinished();
+
+        ProtocolState nextState(String response);
+
+        Optional<ByteBuffer> toSend();
+    }
+
+    private class HandshakeSuccess implements ProtocolState {
+
+        @Override
+        public boolean isFinished() {
+            return true;
+        }
+
+        @Override
+        public ProtocolState nextState(String response) {
+            return this;
+        }
+
+        @Override
+        public Optional<ByteBuffer> toSend() {
+            return Optional.empty();
+        }
+
     }
 
     private class InitialState implements ProtocolState {
         private final String nonce;
-        private final String username;
         private final byte[] password;
+        private final String username;
 
         InitialState(String username, String password) {
             this.username = username;
@@ -51,24 +60,24 @@ public class Handshake {
             }
             // We could use a json serializer, but it's fairly straightforward
             ScramAttributes clientFirstMessageBare = ScramAttributes.create()
-                    .username(username)
-                    .nonce(nonce);
+                .username(username)
+                .nonce(nonce);
             byte[] jsonBytes = toUTF8(
                 "{" +
                     "\"protocol_version\":" + SUB_PROTOCOL_VERSION + "," +
                     "\"authentication_method\":\"SCRAM-SHA-256\"," +
                     "\"authentication\":" + "\"n,," + clientFirstMessageBare + "\"" +
-                "}"
+                    "}"
             );
             ByteBuffer msg = Util.leByteBuffer(
-                    Integer.BYTES +    // size of VERSION
+                Integer.BYTES +    // size of VERSION
                     jsonBytes.length + // json auth payload
                     1                  // terminating null byte
             ).putInt(VERSION.value)
-             .put(jsonBytes)
-             .put(new byte[1]);
+                .put(jsonBytes)
+                .put(new byte[1]);
             return new WaitingForProtocolRange(
-                    nonce, password, clientFirstMessageBare, msg);
+                nonce, password, clientFirstMessageBare, msg);
         }
 
         @Override
@@ -82,55 +91,13 @@ public class Handshake {
         }
     }
 
-    private class WaitingForProtocolRange implements ProtocolState {
-        private final String nonce;
-        private final ByteBuffer message;
-        private final ScramAttributes clientFirstMessageBare;
-        private final byte[] password;
-
-        WaitingForProtocolRange(
-                String nonce,
-                byte[] password,
-                ScramAttributes clientFirstMessageBare,
-                ByteBuffer message) {
-            this.nonce = nonce;
-            this.password = password;
-            this.clientFirstMessageBare = clientFirstMessageBare;
-            this.message = message;
-        }
-
-        @Override
-        public ProtocolState nextState(String response) {
-            JSONObject json = toJSON(response);
-            throwIfFailure(json);
-            Long minVersion = (Long) json.get("min_protocol_version");
-            Long maxVersion = (Long) json.get("max_protocol_version");
-            if (SUB_PROTOCOL_VERSION < minVersion || SUB_PROTOCOL_VERSION > maxVersion) {
-                throw new ReqlDriverError(
-                        "Unsupported protocol version " + SUB_PROTOCOL_VERSION +
-                                ", expected between " + minVersion + " and " + maxVersion);
-            }
-            return new WaitingForAuthResponse(nonce, password, clientFirstMessageBare);
-        }
-
-        @Override
-        public Optional<ByteBuffer> toSend() {
-            return Optional.of(message);
-        }
-
-        @Override
-        public boolean isFinished() {
-            return false;
-        }
-    }
-
     private class WaitingForAuthResponse implements ProtocolState {
+        private final ScramAttributes clientFirstMessageBare;
         private final String nonce;
         private final byte[] password;
-        private final ScramAttributes clientFirstMessageBare;
 
         WaitingForAuthResponse(
-                String nonce, byte[] password, ScramAttributes clientFirstMessageBare) {
+            String nonce, byte[] password, ScramAttributes clientFirstMessageBare) {
             this.nonce = nonce;
             this.password = password;
             this.clientFirstMessageBare = clientFirstMessageBare;
@@ -146,12 +113,12 @@ public class Handshake {
                 throw new ReqlAuthError("Invalid nonce from server");
             }
             ScramAttributes clientFinalMessageWithoutProof = ScramAttributes.create()
-                    .headerAndChannelBinding("biws")
-                    .nonce(serverAuth.nonce());
+                .headerAndChannelBinding("biws")
+                .nonce(serverAuth.nonce());
 
             // SaltedPassword := Hi(Normalize(password), salt, i)
             byte[] saltedPassword = pbkdf2(
-                    password, serverAuth.salt(), serverAuth.iterationCount());
+                password, serverAuth.salt(), serverAuth.iterationCount());
 
             // ClientKey := HMAC(SaltedPassword, "Client Key")
             byte[] clientKey = hmac(saltedPassword, CLIENT_KEY);
@@ -163,7 +130,7 @@ public class Handshake {
             //                server-first-message + "," +
             //                client-final-message-without-proof
             String authMessage =
-                    clientFirstMessageBare + "," +
+                clientFirstMessageBare + "," +
                     serverFirstMessage + "," +
                     clientFinalMessageWithoutProof;
 
@@ -180,11 +147,11 @@ public class Handshake {
             byte[] serverSignature = hmac(serverKey, authMessage);
 
             ScramAttributes auth = clientFinalMessageWithoutProof
-                    .clientProof(clientProof);
+                .clientProof(clientProof);
             byte[] authJson = toUTF8("{\"authentication\":\"" + auth + "\"}");
             ByteBuffer message = Util.leByteBuffer(authJson.length + 1)
-                    .put(authJson)
-                    .put(new byte[1]);
+                .put(authJson)
+                .put(new byte[1]);
             return new WaitingForAuthSuccess(serverSignature, message);
         }
 
@@ -200,8 +167,8 @@ public class Handshake {
     }
 
     private class WaitingForAuthSuccess implements ProtocolState {
-        private final byte[] serverSignature;
         private final ByteBuffer message;
+        private final byte[] serverSignature;
 
         public WaitingForAuthSuccess(byte[] serverSignature, ByteBuffer message) {
             this.serverSignature = serverSignature;
@@ -213,7 +180,7 @@ public class Handshake {
             JSONObject json = toJSON(response);
             throwIfFailure(json);
             ScramAttributes auth = ScramAttributes
-                    .from((String) json.get("authentication"));
+                .from((String) json.get("authentication"));
             if (!MessageDigest.isEqual(auth.serverSignature(), serverSignature)) {
                 throw new ReqlAuthError("Invalid server signature");
             }
@@ -231,22 +198,74 @@ public class Handshake {
         }
     }
 
-    private class HandshakeSuccess implements ProtocolState {
+    private class WaitingForProtocolRange implements ProtocolState {
+        private final ScramAttributes clientFirstMessageBare;
+        private final ByteBuffer message;
+        private final String nonce;
+        private final byte[] password;
+
+        WaitingForProtocolRange(
+            String nonce,
+            byte[] password,
+            ScramAttributes clientFirstMessageBare,
+            ByteBuffer message) {
+            this.nonce = nonce;
+            this.password = password;
+            this.clientFirstMessageBare = clientFirstMessageBare;
+            this.message = message;
+        }
 
         @Override
         public ProtocolState nextState(String response) {
-            return this;
+            JSONObject json = toJSON(response);
+            throwIfFailure(json);
+            Long minVersion = (Long) json.get("min_protocol_version");
+            Long maxVersion = (Long) json.get("max_protocol_version");
+            if (SUB_PROTOCOL_VERSION < minVersion || SUB_PROTOCOL_VERSION > maxVersion) {
+                throw new ReqlDriverError(
+                    "Unsupported protocol version " + SUB_PROTOCOL_VERSION +
+                        ", expected between " + minVersion + " and " + maxVersion);
+            }
+            return new WaitingForAuthResponse(nonce, password, clientFirstMessageBare);
         }
 
         @Override
         public Optional<ByteBuffer> toSend() {
-            return Optional.empty();
+            return Optional.of(message);
         }
 
         @Override
         public boolean isFinished() {
-            return true;
+            return false;
         }
+    }
+
+    static final Protocol PROTOCOL = Protocol.JSON;
+    static final Long SUB_PROTOCOL_VERSION = 0L;
+    static final Version VERSION = Version.V1_0;
+    private static final String CLIENT_KEY = "Client Key";
+    private static final String SERVER_KEY = "Server Key";
+    private final String password;
+    private final String username;
+    private ProtocolState state;
+
+    public Handshake(String username, String password) {
+        this.username = username;
+        this.password = password;
+        this.state = new InitialState(username, password);
+    }
+
+    public boolean isFinished() {
+        return this.state.isFinished();
+    }
+
+    public Optional<ByteBuffer> nextMessage(String response) {
+        this.state = this.state.nextState(response);
+        return this.state.toSend();
+    }
+
+    public void reset() {
+        this.state = new InitialState(this.username, this.password);
     }
 
     private void throwIfFailure(JSONObject json) {
@@ -258,24 +277,5 @@ public class Handshake {
                 throw new ReqlDriverError((String) json.get("error"));
             }
         }
-    }
-
-    public Handshake(String username, String password) {
-        this.username = username;
-        this.password = password;
-        this.state = new InitialState(username, password);
-    }
-
-    public void reset() {
-        this.state = new InitialState(this.username, this.password);
-    }
-
-    public Optional<ByteBuffer> nextMessage(String response) {
-        this.state = this.state.nextState(response);
-        return this.state.toSend();
-    }
-
-    public boolean isFinished() {
-        return this.state.isFinished();
     }
 }
