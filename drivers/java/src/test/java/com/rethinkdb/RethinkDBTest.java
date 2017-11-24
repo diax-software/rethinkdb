@@ -5,7 +5,6 @@ import com.rethinkdb.gen.exc.ReqlQueryLogicError;
 import com.rethinkdb.model.MapObject;
 import com.rethinkdb.model.OptArgs;
 import com.rethinkdb.net.Connection;
-import com.rethinkdb.net.Cursor;
 import net.jodah.concurrentunit.Waiter;
 import org.junit.*;
 import org.junit.rules.ExpectedException;
@@ -247,30 +246,54 @@ public class RethinkDBTest{
         }
     }
 
-    @Test
-    public void testFilter() {
-        r.db(dbName).table(tableName).insert(new MapObject().with("field", "123")).run(conn);
-        r.db(dbName).table(tableName).insert(new MapObject().with("field", "456")).run(conn);
+    @Test(timeout=20000)
+    public void testConcurrentCursor() throws TimeoutException, InterruptedException {
+        final int total = 500;
+        final Waiter waiter = new Waiter();
+        for (int i = 0; i < total; i++)
+            new Thread(() -> {
+                final TestPojo pojo = new TestPojo("writezz", new TestPojoInner(10L, true));
+                final Map<String, Object> result = r.db(dbName).table(tableName).insert(pojo).run(conn);
+                waiter.assertEquals(1L, result.get("inserted"));
+                waiter.resume();
+            }).start();
 
-        Cursor<Map<String, String>> allEntries = r.db(dbName).table(tableName).run(conn);
-        assertEquals(2, allEntries.toList().size());
+        waiter.await(2500, total);
 
-        // The following won't work, because r.row is not implemented in the Java driver. Use lambda syntax instead
-        // Cursor<Map<String, String>> oneEntryRow = r.db(dbName).table(tableName).filter(r.row("field").eq("456")).run(conn);
-        // assertEquals(1, oneEntryRow.toList().size());
-
-        Cursor<Map<String, String>> oneEntryLambda = r.db(dbName).table(tableName).filter(table -> table.getField("field").eq("456")).run(conn);
-        assertEquals(1, oneEntryLambda.toList().size());
+        final Cursor<com.rethinkdb.TestPojo> all = r.db(dbName).table(tableName).run(conn);
+        assertEquals(total, all.toList().size());
     }
 
-    @Test
-    public void testCursorTryWithResources() {
-        r.db(dbName).table(tableName).insert(new MapObject().with("field", "123")).run(conn);
-        r.db(dbName).table(tableName).insert(new MapObject().with("field", "456")).run(conn);
+    @Test(timeout=20000)
+    public void testConcurrentReads() throws TimeoutException {
+        final int total = 500;
+        final AtomicInteger readCounter = new AtomicInteger(0);
 
-        try(Cursor<Map<String, String>> allEntries = r.db(dbName).table(tableName).run(conn)) {
-            assertEquals(2, allEntries.toList().size());
-        }
+        // write to the database and retrieve the id
+        final TestPojo pojo = new TestPojo("readzz", new TestPojoInner(10L, true));
+        final Map<String, Object> result = r.db(dbName).table(tableName).insert(pojo).optArg("return_changes", true).run(conn);
+        final String id = ((List) result.get("generated_keys")).get(0).toString();
+
+        final Waiter waiter = new Waiter();
+        for (int i = 0; i < total; i++)
+            new Thread(() -> {
+                // make sure there's only one
+                final Cursor<com.rethinkdb.TestPojo> cursor = r.db(dbName).table(tableName).run(conn, TestPojo.class);
+                assertEquals(1, cursor.toList().size());
+                // read that one
+                final TestPojo readPojo = r.db(dbName).table(tableName).get(id).run(conn, TestPojo.class);
+                waiter.assertNotNull(readPojo);
+                // assert inserted values
+                waiter.assertEquals("readzz", readPojo.getStringProperty());
+                waiter.assertEquals(10L, readPojo.getPojoProperty().getLongProperty());
+                waiter.assertEquals(true, readPojo.getPojoProperty().getBooleanProperty());
+                readCounter.getAndIncrement();
+                waiter.resume();
+            }).start();
+
+        waiter.await(10000, total);
+
+        assertEquals(total, readCounter.get());
     }
 
     @Test
@@ -298,6 +321,51 @@ public class RethinkDBTest{
     }
 
     @Test
+    public void testCursorTryWithResources() {
+        r.db(dbName).table(tableName).insert(new MapObject().with("field", "123")).run(conn);
+        r.db(dbName).table(tableName).insert(new MapObject().with("field", "456")).run(conn);
+
+        try (Cursor<Map<String, String>> allEntries = r.db(dbName).table(tableName).run(conn)) {
+            assertEquals(2, allEntries.toList().size());
+        }
+    }
+
+    @Test
+    public void testFilter() {
+        r.db(dbName).table(tableName).insert(new MapObject().with("field", "123")).run(conn);
+        r.db(dbName).table(tableName).insert(new MapObject().with("field", "456")).run(conn);
+
+        Cursor<Map<String, String>> allEntries = r.db(dbName).table(tableName).run(conn);
+        assertEquals(2, allEntries.toList().size());
+
+        // The following won't work, because r.row is not implemented in the Java driver. Use lambda syntax instead
+        // Cursor<Map<String, String>> oneEntryRow = r.db(dbName).table(tableName).filter(r.row("field").eq("456")).run(conn);
+        // assertEquals(1, oneEntryRow.toList().size());
+
+        Cursor<Map<String, String>> oneEntryLambda = r.db(dbName).table(tableName).filter(table -> table.getField("field").eq("456")).run(conn);
+        assertEquals(1, oneEntryLambda.toList().size());
+    }
+
+    @Test(timeout=20000)
+    public void testConcurrentWrites() throws TimeoutException, InterruptedException {
+        final int total = 500;
+        final AtomicInteger writeCounter = new AtomicInteger(0);
+        final Waiter waiter = new Waiter();
+        for (int i = 0; i < total; i++)
+            new Thread(() -> {
+                final TestPojo pojo = new TestPojo("writezz", new TestPojoInner(10L, true));
+                final Map<String, Object> result = r.db(dbName).table(tableName).insert(pojo).run(conn);
+                waiter.assertEquals(1L, result.get("inserted"));
+                writeCounter.getAndIncrement();
+                waiter.resume();
+            }).start();
+
+        waiter.await(2500, total);
+
+        assertEquals(total, writeCounter.get());
+    }
+
+    @Test
     public void testTableSelectOfPojoCursor() {
         TestPojo pojoOne = new TestPojo("foo", new TestPojoInner(42L, true));
         TestPojo pojoTwo = new TestPojo("bar", new TestPojoInner(53L, false));
@@ -306,7 +374,7 @@ public class RethinkDBTest{
         assertEquals(1L, pojoOneResult.get("inserted"));
         assertEquals(1L, pojoTwoResult.get("inserted"));
 
-        Cursor<TestPojo> cursor = r.db(dbName).table(tableName).run(conn, TestPojo.class);
+        Cursor<com.rethinkdb.TestPojo> cursor = r.db(dbName).table(tableName).run(conn, TestPojo.class);
         List<TestPojo> result = cursor.toList();
         assertEquals(2, result.size());
 
@@ -331,79 +399,10 @@ public class RethinkDBTest{
         assertEquals(1L, pojoOneResult.get("inserted"));
         assertEquals(1L, pojoTwoResult.get("inserted"));
 
-        Cursor<TestPojo> cursor = r.db(dbName).table(tableName).run(conn /* TestPojo.class is not specified */);
+        Cursor<com.rethinkdb.TestPojo> cursor = r.db(dbName).table(tableName).run(conn /* TestPojo.class is not specified */);
         List<TestPojo> result = cursor.toList();
 
         TestPojo pojoSelected = result.get(0);
-    }
-
-    @Test(timeout=20000)
-    public void testConcurrentWrites() throws TimeoutException, InterruptedException {
-        final int total = 500;
-        final AtomicInteger writeCounter = new AtomicInteger(0);
-        final Waiter waiter = new Waiter();
-        for (int i = 0; i < total; i++)
-            new Thread(() -> {
-                final TestPojo pojo = new TestPojo("writezz", new TestPojoInner(10L, true));
-                final Map<String, Object> result = r.db(dbName).table(tableName).insert(pojo).run(conn);
-                waiter.assertEquals(1L, result.get("inserted"));
-                writeCounter.getAndIncrement();
-                waiter.resume();
-            }).start();
-
-        waiter.await(2500, total);
-
-        assertEquals(total, writeCounter.get());
-    }
-
-    @Test(timeout=20000)
-    public void testConcurrentReads() throws TimeoutException {
-        final int total = 500;
-        final AtomicInteger readCounter = new AtomicInteger(0);
-
-        // write to the database and retrieve the id
-        final TestPojo pojo = new TestPojo("readzz", new TestPojoInner(10L, true));
-        final Map<String, Object> result = r.db(dbName).table(tableName).insert(pojo).optArg("return_changes", true).run(conn);
-        final String id = ((List) result.get("generated_keys")).get(0).toString();
-
-        final Waiter waiter = new Waiter();
-        for (int i = 0; i < total; i++)
-            new Thread(() -> {
-                // make sure there's only one
-                final Cursor<TestPojo> cursor = r.db(dbName).table(tableName).run(conn, TestPojo.class);
-                assertEquals(1, cursor.toList().size());
-                // read that one
-                final TestPojo readPojo = r.db(dbName).table(tableName).get(id).run(conn, TestPojo.class);
-                waiter.assertNotNull(readPojo);
-                // assert inserted values
-                waiter.assertEquals("readzz", readPojo.getStringProperty());
-                waiter.assertEquals(10L, readPojo.getPojoProperty().getLongProperty());
-                waiter.assertEquals(true, readPojo.getPojoProperty().getBooleanProperty());
-                readCounter.getAndIncrement();
-                waiter.resume();
-            }).start();
-
-        waiter.await(10000, total);
-
-        assertEquals(total, readCounter.get());
-    }
-
-    @Test(timeout=20000)
-    public void testConcurrentCursor() throws TimeoutException, InterruptedException {
-        final int total = 500;
-        final Waiter waiter = new Waiter();
-        for (int i = 0; i < total; i++)
-            new Thread(() -> {
-                final TestPojo pojo = new TestPojo("writezz", new TestPojoInner(10L, true));
-                final Map<String, Object> result = r.db(dbName).table(tableName).insert(pojo).run(conn);
-                waiter.assertEquals(1L, result.get("inserted"));
-                waiter.resume();
-            }).start();
-
-        waiter.await(2500, total);
-
-        final Cursor<TestPojo> all = r.db(dbName).table(tableName).run(conn);
-        assertEquals(total, all.toList().size());
     }
 
     @Test

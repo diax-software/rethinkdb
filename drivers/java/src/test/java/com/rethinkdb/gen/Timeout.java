@@ -5,40 +5,17 @@
 package com.rethinkdb.gen;
 
 import com.rethinkdb.RethinkDB;
-import com.rethinkdb.gen.exc.*;
-import com.rethinkdb.gen.ast.*;
-import com.rethinkdb.ast.ReqlAst;
-import com.rethinkdb.model.MapObject;
+import com.rethinkdb.TestingFramework;
 import com.rethinkdb.model.OptArgs;
 import com.rethinkdb.net.Connection;
-import com.rethinkdb.net.Cursor;
-import junit.framework.TestCase;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertArrayEquals;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.junit.*;
-import org.junit.rules.ExpectedException;
-
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.time.Instant;
-import java.util.stream.LongStream;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import java.util.concurrent.TimeoutException;
-import java.util.regex.Pattern;
-import java.util.Collections;
-import java.nio.charset.StandardCharsets;
-
 import static com.rethinkdb.TestingCommon.*;
-import com.rethinkdb.TestingFramework;
+import static org.junit.Assert.assertEquals;
 
 public class Timeout {
     // Tests timeouts.

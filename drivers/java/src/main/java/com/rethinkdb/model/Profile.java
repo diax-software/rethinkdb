@@ -2,16 +2,11 @@ package com.rethinkdb.model;
 
 import org.json.JSONArray;
 
-import java.util.Optional;
-
 public class Profile {
 
-    public static Optional<Profile> fromJSONArray(JSONArray profileObj) {
-        if (profileObj == null || profileObj.size() == 0) {
-            return Optional.empty();
-        } else {
-            return Optional.of(new Profile(profileObj));
-        }
+    public static Profile fromJSONArray(JSONArray profileObj) {
+        if (profileObj == null || profileObj.length() == 0) return null;
+        return new Profile(profileObj);
     }
 
     private JSONArray profileObj;

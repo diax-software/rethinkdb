@@ -1,5 +1,6 @@
 package com.rethinkdb.net;
 
+import com.rethinkdb.Cursor;
 import com.rethinkdb.ast.Query;
 import com.rethinkdb.ast.ReqlAst;
 import com.rethinkdb.gen.ast.Db;
@@ -14,7 +15,6 @@ import java.io.IOException;
 import java.net.SocketAddress;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -32,7 +32,7 @@ public class Connection implements IConnection {
     private final AtomicLong nextToken = new AtomicLong();
     private Exception awaiterException = null;
     private Long connectTimeout;
-    private Map<Long, Cursor> cursorCache = new ConcurrentHashMap<>();
+    private Map<Long, CursorImpl<?>> cursorCache = new ConcurrentHashMap<>();
     // private mutable
     private String dbname;
     // execution stuff
@@ -77,18 +77,6 @@ public class Connection implements IConnection {
         runQueryNoreply(Query.start(newToken(), term, globalOpts));
     }
 
-    void addToCache(long token, Cursor cursor) {
-        cursorCache.put(token, cursor);
-    }
-
-    public Optional<SocketAddress> clientAddress() {
-        return socket.map(SocketWrapper::clientAddress).orElse(Optional.empty());
-    }
-
-    public Optional<Integer> clientPort() {
-        return socket.map(SocketWrapper::clientPort).orElse(Optional.empty());
-    }
-
     @Override
     public void close(boolean shouldNoreplyWait) {
         // disconnect
@@ -101,7 +89,7 @@ public class Connection implements IConnection {
             nextToken.set(0);
 
             // clear cursor cache
-            for (Cursor cursor : cursorCache.values()) {
+            for (CursorImpl<?> cursor : cursorCache.values()) {
                 cursor.setError("Connection is closed.");
             }
             cursorCache.clear();
@@ -123,9 +111,21 @@ public class Connection implements IConnection {
             }
 
             // close the socket
-            socket.ifPresent(SocketWrapper::close);
+            if (socket != null) socket.close();
         }
 
+    }
+
+    void addToCache(long token, CursorImpl<?> cursor) {
+        cursorCache.put(token, cursor);
+    }
+
+    public SocketAddress clientAddress() {
+        return socket == null ? null : socket.clientAddress();
+    }
+
+    public Integer clientPort() {
+        return socket == null ? null : socket.clientPort();
     }
 
     public void connect() throws TimeoutException {
@@ -151,7 +151,8 @@ public class Connection implements IConnection {
 
                 // read response and send it to whoever is waiting, if anyone
                 try {
-                    final Response response = this.socket.orElseThrow(() -> new ReqlDriverError("No socket available.")).read();
+                    if (socket == null) throw new ReqlDriverError("No socket available.");
+                    final Response response = this.socket.read();
                     final CompletableFuture<Response> awaiter = awaiters.remove(response.token);
                     if (awaiter != null) {
                         awaiter.complete(response);
@@ -165,12 +166,12 @@ public class Connection implements IConnection {
         });
     }
 
-    public Future<Response> continue_(Cursor cursor) {
+    public Future<Response> continue_(CursorImpl<?> cursor) {
         return sendQuery(Query.continue_(cursor.token));
     }
 
-    public Optional<String> db() {
-        return Optional.ofNullable(dbname);
+    public String db() {
+        return dbname;
     }
 
     public boolean isOpen() {
@@ -232,7 +233,7 @@ public class Connection implements IConnection {
                 throw new ReqlDriverError("Atom response was empty!", ex);
             }
         } else if (res.isPartial() || res.isSequence()) {
-            Cursor cursor = Cursor.create(this, query, res, pojoClass);
+            Cursor<?> cursor = CursorImpl.create(this, query, res, pojoClass);
             return (T) cursor;
         } else if (res.isWaitComplete()) {
             return null;
@@ -305,7 +306,7 @@ public class Connection implements IConnection {
         }
     }
 
-    public void stop(Cursor cursor) {
+    public void stop(CursorImpl<?> cursor) {
         // While the server does reply to the stop request, we ignore that reply.
         // This works because the response pump in `connect` ignores replies for which
         // no waiter exists.

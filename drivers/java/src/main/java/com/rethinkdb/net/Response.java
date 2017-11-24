@@ -15,16 +15,17 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 class Response {
     static class Builder {
-        Optional<Backtrace> backtrace = Optional.empty();
+        Backtrace backtrace = null;
         JSONArray data = new JSONArray();
-        Optional<ErrorType> errorType = Optional.empty();
-        ArrayList<ResponseNote> notes = new ArrayList<>();
-        Optional<Profile> profile = Optional.empty();
+        ErrorType errorType = null;
+        List<ResponseNote> notes = new ArrayList<>();
+        Profile profile;
         ResponseType responseType;
         long token;
 
@@ -58,11 +59,11 @@ class Response {
         }
 
         Builder setErrorType(int value) {
-            this.errorType = Optional.of(ErrorType.fromValue(value));
+            this.errorType = ErrorType.fromValue(value);
             return this;
         }
 
-        Builder setNotes(ArrayList<ResponseNote> notes) {
+        Builder setNotes(List<ResponseNote> notes) {
             this.notes.addAll(notes);
             return this;
         }
@@ -119,10 +120,10 @@ class Response {
     private Response(long token,
         ResponseType responseType,
         JSONArray data,
-        ArrayList<ResponseNote> responseNotes,
-        Optional<Profile> profile,
-        Optional<Backtrace> backtrace,
-        Optional<ErrorType> errorType
+        List<ResponseNote> responseNotes,
+        Profile profile,
+        Backtrace backtrace,
+        ErrorType errorType
     ) {
         this.token = token;
         this.type = responseType;

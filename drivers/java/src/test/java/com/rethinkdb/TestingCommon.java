@@ -3,7 +3,7 @@ package com.rethinkdb;
 import com.rethinkdb.ast.ReqlAst;
 import com.rethinkdb.model.OptArgs;
 import com.rethinkdb.net.Connection;
-import com.rethinkdb.net.Cursor;
+import com.rethinkdb.net.CursorImpl;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -369,9 +369,9 @@ public final class TestingCommon {
         }
         try {
             Object res = ((ReqlAst)query).run(conn, runopts);
-            if(res instanceof com.rethinkdb.net.Cursor) {
+            if (res instanceof CursorImpl) {
                 ArrayList ret = new ArrayList();
-                ((com.rethinkdb.net.Cursor) res).forEachRemaining(ret::add);
+                ((Cursor) res).forEachRemaining(ret::add);
                 return ret;
             }else{
                 return res;
