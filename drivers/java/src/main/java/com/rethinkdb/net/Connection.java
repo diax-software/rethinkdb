@@ -15,55 +15,66 @@ import java.net.SocketAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class Connection implements IConnection {
-
-    // logger
     private static final Logger log = LoggerFactory.getLogger(Connection.class);
 
-    public static ConnectionBuilder build() {
-        return new ConnectionBuilder();
-    }
-
     // public immutable
-    public final String hostname;
-    public final int port;
+    private final String hostname;
+    private final int port;
     private final Map<Long, CompletableFuture<Response>> awaiters = new ConcurrentHashMap<>();
     private final Handshake handshake;
     private final ReentrantLock lock = new ReentrantLock();
     private final AtomicLong nextToken = new AtomicLong();
-    // network stuff
-    Optional<SocketWrapper> socket = Optional.empty();
     private Exception awaiterException = null;
-    private Optional<Long> connectTimeout;
+    private Long connectTimeout;
     private Map<Long, Cursor> cursorCache = new ConcurrentHashMap<>();
     // private mutable
-    private Optional<String> dbname;
+    private String dbname;
     // execution stuff
     private ExecutorService exec;
-    private Optional<SSLContext> sslContext;
+    // network stuff
+    private SocketWrapper socket;
+    private SSLContext sslContext;
 
     public Connection(ConnectionBuilder builder) {
-        dbname = builder.dbname;
-        if (builder.authKey.isPresent() && builder.user.isPresent()) {
+        this.dbname = builder.dbname();
+
+        if (builder.authKey() != null && builder.user() != null) {
             throw new ReqlDriverError("Either `authKey` or `user` can be used, but not both.");
         }
-        String user = builder.user.orElse("admin");
-        String password = builder.password.orElse(builder.authKey.orElse(""));
+
+        String user = builder.user(), password = builder.password();
+
         handshake = new Handshake(user, password);
-        hostname = builder.hostname.orElse("localhost");
-        port = builder.port.orElse(28015);
+        hostname = builder.hostname();
+        port = builder.port();
         // is certFile provided? if so, it has precedence over SSLContext
-        this.sslContext = Crypto.handleCertfile(builder.certFile, builder.sslContext);
-        connectTimeout = builder.timeout;
+        this.sslContext = Crypto.handleCertfile(builder.certFile(), builder.sslContext());
+        connectTimeout = builder.timeout();
     }
 
     @Override
-    public void close() {
-        close(false);
+    public <T> T run(ReqlAst term, OptArgs globalOpts, Class<?> pojoClass, Long timeout) {
+        setDefaultDB(globalOpts);
+        Query q = Query.start(newToken(), term, globalOpts);
+        if (globalOpts.containsKey("noreply")) {
+            throw new ReqlDriverError(
+                "Don't provide the noreply option as an optarg. " +
+                    "Use `.runNoReply` instead of `.run`");
+        }
+        return runQuery(q, pojoClass);
+    }
+
+    @Override
+    public void runNoReply(ReqlAst term, OptArgs globalOpts) {
+        setDefaultDB(globalOpts);
+        globalOpts.with("noreply", true);
+        runQueryNoreply(Query.start(newToken(), term, globalOpts));
     }
 
     void addToCache(long token, Cursor cursor) {
@@ -78,6 +89,7 @@ public class Connection implements IConnection {
         return socket.map(SocketWrapper::clientPort).orElse(Optional.empty());
     }
 
+    @Override
     public void close(boolean shouldNoreplyWait) {
         // disconnect
         try {
@@ -95,14 +107,14 @@ public class Connection implements IConnection {
             cursorCache.clear();
 
             // handle current awaiters
-            this.awaiters.values().stream().forEach(awaiter -> {
+            for (CompletableFuture<Response> awaiter : this.awaiters.values()) {
                 // what happened?
                 if (this.awaiterException != null) { // an exception
                     awaiter.completeExceptionally(this.awaiterException);
                 } else { // probably canceled
                     awaiter.cancel(true);
                 }
-            });
+            }
             awaiters.clear();
 
             // terminate response pump
@@ -117,13 +129,13 @@ public class Connection implements IConnection {
     }
 
     public void connect() throws TimeoutException {
-        connect(Optional.empty());
+        connect(null);
     }
 
-    void connect(Optional<Long> timeout) throws TimeoutException {
-        final SocketWrapper sock = new SocketWrapper(hostname, port, sslContext, timeout.isPresent() ? timeout : connectTimeout);
+    public void connect(Long timeout) throws TimeoutException {
+        final SocketWrapper sock = new SocketWrapper(hostname, port, sslContext, timeout != null ? timeout : connectTimeout);
         sock.connect(handshake);
-        socket = Optional.of(sock);
+        socket = sock;
 
         // start response pump
         exec = Executors.newSingleThreadExecutor();
@@ -153,64 +165,46 @@ public class Connection implements IConnection {
         });
     }
 
-    @Override
-    public <T> T run(ReqlAst term, OptArgs globalOpts, Class<?> pojoClass, Long timeout) {
-        setDefaultDB(globalOpts);
-        Query q = Query.start(newToken(), term, globalOpts);
-        if (globalOpts.containsKey("noreply")) {
-            throw new ReqlDriverError(
-                "Don't provide the noreply option as an optarg. " +
-                    "Use `.runNoReply` instead of `.run`");
-        }
-        return runQuery(q, pojoClass);
+    public Future<Response> continue_(Cursor cursor) {
+        return sendQuery(Query.continue_(cursor.token));
     }
 
     public Optional<String> db() {
-        return dbname;
+        return Optional.ofNullable(dbname);
     }
 
     public boolean isOpen() {
-        return socket.map(SocketWrapper::isOpen).orElse(false);
+        return socket != null && socket.isOpen();
     }
 
-    private long newToken() {
+    public long newToken() {
         return nextToken.incrementAndGet();
     }
 
-    @Override
-    public void runNoReply(ReqlAst term, OptArgs globalOpts) {
-        setDefaultDB(globalOpts);
-        globalOpts.with("noreply", true);
-        runQueryNoreply(Query.start(newToken(), term, globalOpts));
+    public void noreplyWait() {
+        runQuery(Query.noreplyWait(newToken()), null);
     }
 
     public Connection reconnect() {
         try {
-            return reconnect(false, Optional.empty());
+            return reconnect(false, null);
         } catch (TimeoutException toe) {
             throw new RuntimeException("Timeout can't happen here.");
         }
     }
 
-    public Connection reconnect(boolean noreplyWait, Optional<Long> timeout) throws TimeoutException {
-        if (!timeout.isPresent()) {
+    public Connection reconnect(boolean noreplyWait, Long timeout) throws TimeoutException {
+        if (timeout == null) {
             timeout = connectTimeout;
         }
+
         close(noreplyWait);
         connect(timeout);
         return this;
     }
 
-    void removeFromCache(long token) {
+    public void removeFromCache(long token) {
         cursorCache.remove(token);
-    }
-
-    Future<Response> continue_(Cursor cursor) {
-        return sendQuery(Query.continue_(cursor.token));
-    }
-
-    public void noreplyWait() {
-        runQuery(Query.noreplyWait(newToken()), null);
     }
 
     /**
@@ -221,7 +215,7 @@ public class Connection implements IConnection {
      * @param <T>
      * @return
      */
-    <T> T runQuery(Query query, Class<?> pojoClass) {
+    private <T> T runQuery(Query query, Class<?> pojoClass) {
         Response res = null;
         try {
             res = sendQuery(query).get();
@@ -247,7 +241,7 @@ public class Connection implements IConnection {
         }
     }
 
-    void runQueryNoreply(Query query) {
+    private void runQueryNoreply(Query query) {
         sendQueryNoreply(query);
     }
 
@@ -255,7 +249,7 @@ public class Connection implements IConnection {
      * Writes a query and returns a completable future.
      * Said completable future value will eventually be set by the runnable response pump (see {@link #connect}).
      *
-     * @param query    the query to execute.
+     * @param query the query to execute.
      * @return a completable future.
      */
     private Future<Response> sendQuery(Query query) {
@@ -265,8 +259,8 @@ public class Connection implements IConnection {
             awaiters.put(query.token, awaiter);
             try {
                 lock.lock();
-                socket.orElseThrow(() -> new ReqlDriverError("No socket available."))
-                    .write(query.serialize());
+                if (socket == null) throw new ReqlDriverError("No socket available.");
+                socket.write(query.serialize());
                 return awaiter.toCompletableFuture();
             } finally {
                 lock.unlock();
@@ -287,8 +281,8 @@ public class Connection implements IConnection {
         if (!exec.isShutdown() && !exec.isTerminated()) {
             try {
                 lock.lock();
-                socket.orElseThrow(() -> new ReqlDriverError("No socket available."))
-                    .write(query.serialize());
+                if (socket == null) throw new ReqlDriverError("No socket available.");
+                socket.write(query.serialize());
                 return;
             } finally {
                 lock.unlock();
@@ -300,10 +294,10 @@ public class Connection implements IConnection {
     }
 
     private void setDefaultDB(OptArgs globalOpts) {
-        if (!globalOpts.containsKey("db") && dbname.isPresent()) {
+        if (!globalOpts.containsKey("db") && dbname != null) {
             // Only override the db global arg if the user hasn't
             // specified one already and one is specified on the connection
-            globalOpts.with("db", dbname.get());
+            globalOpts.with("db", dbname);
         }
         if (globalOpts.containsKey("db")) {
             // The db arg must be wrapped in a db ast object
@@ -311,18 +305,18 @@ public class Connection implements IConnection {
         }
     }
 
-    void stop(Cursor cursor) {
+    public void stop(Cursor cursor) {
         // While the server does reply to the stop request, we ignore that reply.
         // This works because the response pump in `connect` ignores replies for which
         // no waiter exists.
         runQueryNoreply(Query.stop(cursor.token));
     }
 
-    public Optional<Long> timeout() {
-        return connectTimeout;
+    public OptionalLong timeout() {
+        return connectTimeout == null ? OptionalLong.empty() : OptionalLong.of(connectTimeout);
     }
 
     public void use(String db) {
-        dbname = Optional.ofNullable(db);
+        dbname = db;
     }
 }

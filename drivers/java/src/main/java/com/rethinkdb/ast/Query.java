@@ -3,20 +3,22 @@ package com.rethinkdb.ast;
 import com.rethinkdb.gen.proto.QueryType;
 import com.rethinkdb.model.OptArgs;
 import com.rethinkdb.net.Util;
-import lombok.extern.slf4j.Slf4j;
 import org.json.JSONArray;
+import org.slf4j.Logger;
 
-import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+
+import static org.slf4j.LoggerFactory.getLogger;
 
 /* An instance for a query that has been sent to the server. Keeps
  * track of its token, the args to .run() it was called with, and its
  * query type.
 */
 
-@Slf4j
 public class Query {
+    private static final Logger log = getLogger(Query.class);
+
     public static Query continue_(long token) {
         return new Query(QueryType.CONTINUE, token, null, new OptArgs());
     }
@@ -34,7 +36,6 @@ public class Query {
     }
 
     public final OptArgs globalOptions;
-    @Nullable
     public final ReqlAst term;
     public final long token;
     public final QueryType type;

@@ -7,7 +7,7 @@ import java.util.Optional;
 public class Backtrace {
 
     public static Optional<Backtrace> fromJSONArray(JSONArray rawBacktrace) {
-        if (rawBacktrace == null || rawBacktrace.size() == 0) {
+        if (rawBacktrace == null || rawBacktrace.length() == 0) {
             return Optional.empty();
         } else {
             return Optional.of(new Backtrace(rawBacktrace));

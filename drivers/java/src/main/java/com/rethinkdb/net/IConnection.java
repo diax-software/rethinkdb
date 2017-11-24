@@ -41,4 +41,11 @@ public interface IConnection extends Closeable {
     default void runNoReply(ReqlAst term) {
         runNoReply(term, new OptArgs());
     }
+
+    void close(boolean shouldNoreplyWait);
+
+    @Override
+    default void close() {
+        close(false);
+    }
 }

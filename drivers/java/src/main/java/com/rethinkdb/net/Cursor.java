@@ -133,7 +133,7 @@ public abstract class Cursor<T> implements Iterator<T>, Iterable<T>, Closeable {
     }
 
     private void extendInternal(Response response) {
-        threshold = response.data.size();
+        threshold = response.data.length();
         if (!error.isPresent()) {
             if (response.isPartial()) {
                 items.addAll(response.data);

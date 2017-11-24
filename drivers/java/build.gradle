@@ -49,7 +49,6 @@ signing {
 }
 
 dependencies {
-    compileOnly "org.projectlombok:lombok:1.16.16"
     compile 'org.slf4j:slf4j-api:1.7.12'
     compile group: 'org.json', name: 'json', version: '20160810'
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.0.1'

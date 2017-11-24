@@ -9,7 +9,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Use this with the primary key/id of your pojo
+ * Use this with the primary key/id of your pojo.
+ * <br>
+ * This annotation affects Jackson serialization, once ids can't be null.
  */
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)

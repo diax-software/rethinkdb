@@ -13,6 +13,7 @@ public class ConnectionPool implements IConnection {
     private final ConnectionBuilder builder;
     private final Queue<Connection> connections;
     private boolean closeConnections = false;
+    private boolean shouldNoreplyWait = false;
 
     public ConnectionPool(ConnectionBuilder builder, int capacity) {
         this.builder = builder;
@@ -25,10 +26,11 @@ public class ConnectionPool implements IConnection {
     }
 
     @Override
-    public void close() {
+    public void close(boolean shouldNoreplyWait) {
+        this.shouldNoreplyWait = shouldNoreplyWait;
         closeConnections = true;
         for (Connection connection : connections) {
-            connection.close();
+            connection.close(shouldNoreplyWait);
         }
     }
 
@@ -75,7 +77,7 @@ public class ConnectionPool implements IConnection {
         if (!connection.isOpen()) return;
 
         if (!connections.offer(connection)) {
-            connection.close();
+            connection.close(shouldNoreplyWait);
         }
     }
 

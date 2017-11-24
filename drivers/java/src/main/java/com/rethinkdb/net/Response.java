@@ -98,9 +98,9 @@ class Response {
             res.setErrorType(((Long) jsonResp.get("e")).intValue());
         }
         return res.setNotes(responseNotes)
-            .setProfile((JSONArray) jsonResp.getOrDefault("p", null))
-            .setBacktrace((JSONArray) jsonResp.getOrDefault("b", null))
-            .setData((JSONArray) jsonResp.getOrDefault("r", new JSONArray()))
+            .setProfile((JSONArray) jsonResp.optJSONArray("p"))
+            .setBacktrace((JSONArray) jsonResp.optJSONArray("b"))
+            .setData((JSONArray) jsonResp.optJSONArray("r"))
             .build();
     }
 

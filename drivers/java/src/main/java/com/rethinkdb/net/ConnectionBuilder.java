@@ -11,12 +11,11 @@ public class ConnectionBuilder implements Cloneable {
     private String authKey;
     private InputStream certFile;
     private String dbname;
-    private String hostname;
-    private String password;
-    private Integer port;
+    private String hostname = "localhost";
+    private int port = 28015;
     private SSLContext sslContext;
     private Long timeout;
-    private String user;
+    private String user = "admin", password = "";
 
     public ConnectionBuilder clone() throws CloneNotSupportedException {
         ConnectionBuilder c = (ConnectionBuilder) super.clone();
@@ -37,9 +36,17 @@ public class ConnectionBuilder implements Cloneable {
         return this;
     }
 
+    public String authKey() {
+        return this.authKey;
+    }
+
     public ConnectionBuilder certFile(InputStream certFile) {
         this.certFile = Objects.requireNonNull(certFile);
         return this;
+    }
+
+    public InputStream certFile() {
+        return this.certFile;
     }
 
     public Connection connect() {
@@ -51,9 +58,21 @@ public class ConnectionBuilder implements Cloneable {
         return this;
     }
 
+    public String dbname() {
+        return this.dbname;
+    }
+
     public ConnectionBuilder hostname(String hostname) {
         this.hostname = Objects.requireNonNull(hostname);
         return this;
+    }
+
+    public String hostname() {
+        return this.hostname;
+    }
+
+    public String password() {
+        return this.password;
     }
 
     public ConnectionPool pool() {
@@ -65,9 +84,17 @@ public class ConnectionBuilder implements Cloneable {
         return this;
     }
 
+    public Integer port() {
+        return this.port;
+    }
+
     public ConnectionBuilder sslContext(SSLContext sslContext) {
         this.sslContext = Objects.requireNonNull(sslContext);
         return this;
+    }
+
+    public SSLContext sslContext() {
+        return this.sslContext;
     }
 
     public ConnectionBuilder timeout(long timeout) {
@@ -75,9 +102,17 @@ public class ConnectionBuilder implements Cloneable {
         return this;
     }
 
+    public Long timeout() {
+        return this.timeout;
+    }
+
     public ConnectionBuilder user(String user, String password) {
         this.user = Objects.requireNonNull(user);
         this.password = Objects.requireNonNull(password);
         return this;
+    }
+
+    public String user() {
+        return this.user;
     }
 }

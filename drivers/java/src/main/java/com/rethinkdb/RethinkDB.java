@@ -2,7 +2,6 @@ package com.rethinkdb;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rethinkdb.gen.model.TopLevel;
-import com.rethinkdb.net.Connection;
 import com.rethinkdb.net.ConnectionBuilder;
 
 public class RethinkDB extends TopLevel {
@@ -23,6 +22,6 @@ public class RethinkDB extends TopLevel {
     }
 
     public ConnectionBuilder connection() {
-        return Connection.build();
+        return new ConnectionBuilder();
     }
 }

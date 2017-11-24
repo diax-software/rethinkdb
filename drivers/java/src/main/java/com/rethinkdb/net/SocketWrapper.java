@@ -24,33 +24,24 @@ public class SocketWrapper {
     private Socket socket = null;
     private SocketFactory socketFactory = SocketFactory.getDefault();
     // options
-    private Optional<SSLContext> sslContext = Optional.empty();
+    private SSLContext sslContext;
     private SSLSocket sslSocket = null;
-    private Optional<Long> timeout = Optional.empty();
+    private Long timeout;
     private OutputStream writeStream = null;
 
-    SocketWrapper(String hostname,
-        int port,
-        Optional<SSLContext> sslContext,
-        Optional<Long> timeout) {
+    SocketWrapper(String hostname, int port, SSLContext sslContext, Long timeout) {
         this.hostname = hostname;
         this.port = port;
         this.sslContext = sslContext;
         this.timeout = timeout;
     }
 
-    public Optional<SocketAddress> clientAddress() {
-        return Optional.ofNullable(socket.getLocalSocketAddress());
+    public SocketAddress clientAddress() {
+        return socket == null ? null : socket.getLocalSocketAddress();
     }
 
-    public Optional<Integer> clientPort() {
-        Optional<Integer> ret;
-        if (socket != null) {
-            ret = Optional.ofNullable(socket.getLocalPort());
-        } else {
-            ret = Optional.empty();
-        }
-        return ret;
+    public Integer clientPort() {
+        return socket == null ? null : socket.getLocalPort();
     }
 
     /**
@@ -70,19 +61,19 @@ public class SocketWrapper {
      * @param handshake
      */
     void connect(Handshake handshake) {
-        final Optional<Long> deadline = timeout.map(Util::deadline);
+        Long deadline = timeout == null ? null : Util.deadline(timeout);
         try {
             handshake.reset();
             // establish connection
             final InetSocketAddress addr = new InetSocketAddress(hostname, port);
             socket = socketFactory.createSocket();
-            socket.connect(addr, timeout.orElse(0L).intValue());
+            socket.connect(addr, timeout == null ? 0 : timeout.intValue());
             socket.setTcpNoDelay(true);
             socket.setKeepAlive(true);
 
             // should we secure the connection?
-            if (sslContext.isPresent()) {
-                socketFactory = sslContext.get().getSocketFactory();
+            if (sslContext != null) {
+                socketFactory = sslContext.getSocketFactory();
                 SSLSocketFactory sslSf = (SSLSocketFactory) socketFactory;
                 sslSocket = (SSLSocket) sslSf.createSocket(
                     socket,
@@ -126,7 +117,7 @@ public class SocketWrapper {
      * @return true if connection is connected and open, false otherwise.
      */
     boolean isOpen() {
-        return socket == null ? false : socket.isConnected() && !socket.isClosed();
+        return socket != null && (socket.isConnected() && !socket.isClosed());
     }
 
     /**
@@ -163,20 +154,17 @@ public class SocketWrapper {
      * @return a string.
      * @throws IOException
      */
-    private String readNullTerminatedString(Optional<Long> deadline)
+    private String readNullTerminatedString(Long deadline)
         throws IOException {
         final StringBuilder sb = new StringBuilder();
         char c;
-        // set deadline instant
-        final Optional<Long> deadlineInstant = deadline.isPresent() ? Optional.of(System.currentTimeMillis() + deadline.get()) : Optional.empty();
         while ((c = (char) this.readStream.readByte()) != '\0') {
-            // is there a deadline?
-            if (deadlineInstant.isPresent()) {
-                // have we timed-out?
-                if (deadlineInstant.get() < System.currentTimeMillis()) { // reached time-out
-                    throw new ReqlDriverError("Connection timed out.");
-                }
+            // is there a deadline? have we timed-out?
+            if (deadline != null && deadline < System.currentTimeMillis()) {
+                // reached time-out
+                throw new ReqlDriverError("Connection timed out.");
             }
+
             sb.append(c);
         }
 

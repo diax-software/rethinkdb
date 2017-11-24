@@ -18,7 +18,6 @@ import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.rethinkdb.net.Util.fromUTF8;
@@ -72,12 +71,11 @@ class Crypto {
         return decoder.decode(string);
     }
 
-    static Optional<SSLContext> handleCertfile(
-        Optional<InputStream> certFile, Optional<SSLContext> sslContext) {
-        if (certFile.isPresent()) {
+    static SSLContext handleCertfile(InputStream certFile, SSLContext sslContext) {
+        if (certFile != null) {
             try {
                 final CertificateFactory cf = CertificateFactory.getInstance("X.509");
-                final X509Certificate caCert = (X509Certificate) cf.generateCertificate(certFile.get());
+                final X509Certificate caCert = (X509Certificate) cf.generateCertificate(certFile);
 
                 final TrustManagerFactory tmf = TrustManagerFactory
                     .getInstance(TrustManagerFactory.getDefaultAlgorithm());
@@ -88,7 +86,7 @@ class Crypto {
 
                 final SSLContext ssc = SSLContext.getInstance(DEFAULT_SSL_PROTOCOL);
                 ssc.init(null, tmf.getTrustManagers(), null);
-                return Optional.of(ssc);
+                return ssc;
             } catch (IOException | CertificateException | NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
                 throw new ReqlDriverError(e);
             }
